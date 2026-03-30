@@ -77,9 +77,9 @@ app = FastAPI(
 
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.environ.get("SESSION_SECRET_KEY", "fallback-local-only"),
+    secret_key=os.environ["SESSION_SECRET_KEY"],  
     session_cookie="iac_sentinel_session",
-    https_only=False,  # Set True in production behind HTTPS
+    https_only=os.environ.get("ENVIRONMENT") == "production", 
     max_age=3600 * 8,
 )
 
@@ -126,7 +126,11 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
 
     except GithubException as e:
         if e.status == 401:
-            raise HTTPException(status_code=401, detail="Token Vault consent expired")
+            # Raise the specific error that triggers the Auth0 re-auth flow!
+            raise ConsentRequiredError(
+                connection="github", 
+                authorization_url="https://your-tenant.auth0.com/authorize" # Update if you have your exact Auth0 URL
+            )
         raise
 
 fetch_iac_tool = StructuredTool.from_function(
@@ -142,16 +146,29 @@ def scan_iac_security_issues(code: str) -> str:
 
     checkov_results = ""
     try:
-        import tempfile, os
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".tf", delete=False) as tmp:
-            tmp.write(code)
-            tmp_path = tmp.name
+        import tempfile, os, re
+        
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Split the giant string back into individual files based on our header format
+            parts = re.split(r'---\s*Path:\s*(.+?)\s*---', code)
+            
+            if len(parts) > 1:
+                for i in range(1, len(parts), 2):
+                    rel_path = parts[i].strip()
+                    content = parts[i+1].strip()
+                    # Flatten the structure into the temp dir for a quick scan
+                    safe_name = os.path.basename(rel_path) or f"file_{i}.tf"
+                    with open(os.path.join(tmp_dir, safe_name), "w", encoding="utf-8") as f:
+                        f.write(content)
+            else:
+                # Fallback if no headers found
+                with open(os.path.join(tmp_dir, "main.tf"), "w", encoding="utf-8") as f:
+                    f.write(code)
 
-        result = subprocess.run(
-            ["checkov", "--file", tmp_path, "--output", "json", "--quiet"],
-            capture_output=True, text=True, timeout=30
-        )
-        os.unlink(tmp_path)
+            result = subprocess.run(
+                ["checkov", "--directory", tmp_dir, "--output", "json", "--quiet"],
+                capture_output=True, text=True, timeout=30
+            )
 
         if result.stdout:
             data = json.loads(result.stdout)
@@ -218,6 +235,7 @@ def create_fix_pr(
         log_audit_event("DRY_RUN_PR", f"Suggested fix for {repo_owner}/{repo_name}")
         return suggestion
 
+    ref_created = False
     try:
         credentials = get_credentials_from_token_vault()
         g = Github(credentials["access_token"])
@@ -225,6 +243,7 @@ def create_fix_pr(
 
         base_sha = repo.get_branch(repo.default_branch).commit.sha
         repo.create_git_ref(ref=f"refs/heads/{branch}", sha=base_sha)
+        ref_created = True # Track that the branch exists!
 
         for f in files_to_change:
             repo.update_file(
@@ -240,7 +259,13 @@ def create_fix_pr(
         return f"Success! PR created: {pr.html_url}"
 
     except Exception as e:
-        return f"PR creation failed: {str(e)}"
+        # CLEANUP: Delete the stray branch if the PR process failed
+        if ref_created:
+            try:
+                repo.get_git_ref(f"heads/{branch}").delete()
+            except Exception:
+                pass # Ignore errors during cleanup
+        return f"PR creation failed (rolled back branch): {str(e)}"
 
 create_fix_pr_tool = StructuredTool.from_function(
     func=create_fix_pr,
