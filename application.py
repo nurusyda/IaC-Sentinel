@@ -1,4 +1,5 @@
 import os
+import shutil
 import logging
 import sys
 import subprocess
@@ -52,7 +53,7 @@ except ImportError as e:
             self.authorization_url = authorization_url
 
     class Auth0AI:
-        def with_token_vault(self, connection: str):
+        def with_token_vault(self, connection: str, scopes: list = None, **kwargs):
             return lambda func: func
 
     def get_credentials_from_token_vault():
@@ -89,7 +90,10 @@ def log_audit_event(action: str, details: str = "", target: str = "Internal"):
 
 # ── CONFIG ────────────────────────────────────────────────────────────────
 MAX_IAC_FILES = 15
-AUTH0_URL = os.environ.get("AUTH0_GITHUB_AUTHORIZE_URL", "https://your-tenant.auth0.com/authorize")
+AUTH0_URL = os.environ.get("AUTH0_GITHUB_AUTHORIZE_URL")
+if not AUTH0_URL and os.environ.get("ENVIRONMENT") == "production":
+    raise RuntimeError("AUTH0_GITHUB_AUTHORIZE_URL is required in production")
+AUTH0_URL = AUTH0_URL or "https://your-tenant.auth0.com/authorize"
 
 # ── Startup Validation & App Config ───────────────────────────────────────
 SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY")
@@ -215,7 +219,7 @@ fetch_iac_tool = StructuredTool.from_function(
 def scan_iac_security_issues(code: str) -> str:
     checkov_results = ""
     try:
-        import tempfile, os, re
+        import tempfile, re
         
         with tempfile.TemporaryDirectory() as tmp_dir:
             parts = re.split(r'---\s*Path:\s*(.+?)\s*---', code)
@@ -245,8 +249,11 @@ def scan_iac_security_issues(code: str) -> str:
                 with open(os.path.join(tmp_dir, "main.tf"), "w", encoding="utf-8") as f:
                     f.write(code)
 
+            checkov_bin = shutil.which("checkov")
+            if not checkov_bin:
+                raise RuntimeError("checkov executable not found in PATH")
             result = subprocess.run(
-                ["checkov", "--directory", tmp_dir, "--output", "json", "--quiet"],
+                [checkov_bin, "--directory", tmp_dir, "--output", "json", "--quiet"],
                 capture_output=True, text=True, timeout=30
             )
 
@@ -361,8 +368,8 @@ def create_fix_pr(
         if ref_created and repo is not None: # <-- Fixed cleanup bug
             try:
                 repo.get_git_ref(f"heads/{branch}").delete()
-            except Exception:
-                pass 
+            except Exception as cleanup_err:
+                logger.warning(f"Failed to cleanup branch {branch}: {cleanup_err}")
         return f"PR creation failed (rolled back branch): {str(e)}"
 
 
@@ -402,13 +409,6 @@ async def act_endpoint(req: ActRequest):
         context_msg = f"Target Repo: {req.repo_owner}/{req.repo_name}. Request: {req.user_message}"
         result = await agent_executor.ainvoke({"messages": [HumanMessage(content=context_msg)]})
 
-        # 🔍 CHECK: Did the AI "trap" a consent error in its history?
-        for msg in result["messages"]:
-            # If the Auth0 SDK raised an error, it often appears in the Tool messages
-            if hasattr(msg, "content") and "ConsentRequiredError" in str(msg.content):
-                # If we find it, manually re-raise it so the 'except' block below catches it
-                raise ConsentRequiredError(connection="github", authorization_url=AUTH0_URL)
-
         return {
             "response": result["messages"][-1].content,
             "recent_audit": list(AUDIT_LOG)[-5:]
@@ -426,7 +426,7 @@ async def act_endpoint(req: ActRequest):
         ) from e
     except Exception as e:
         logger.error(f"Agent error: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error. Check logs for details.") from e
 
 @app.get("/health")
 def health():
