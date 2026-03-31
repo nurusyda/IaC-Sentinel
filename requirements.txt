@@ -10,9 +10,9 @@ pydantic>=2.9.0,<3.0.0
 PyGithub>=2.5.0,<3.0.0
 
 # LangChain ecosystem
-langchain-core>=0.3.0,<1.0.0
-langgraph>=0.5.3,<1.0.0
-langchain-openai>=0.3.0,<1.0.0
+langchain-core==0.3.83
+langgraph==0.5.4
+langchain-openai==0.3.35
 
 # Auth0 AI SDK
 auth0-ai-langchain==1.0.1

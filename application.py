@@ -146,7 +146,7 @@ class FetchIacFilesArgs(BaseModel):
     repo_name: str = Field(description="GitHub repository name")
 
 class ScanIacArgs(BaseModel):
-    code: str = Field(description="IaC code to scan")
+    code: str = Field(description="The EXACT raw code retrieved from the fetch_iac_files tool. YOU MUST RUN fetch_iac_files FIRST. DO NOT guess, hallucinate, or make up code.")
 
 class ProposeFixArgs(BaseModel):
     repo_owner: str
@@ -164,17 +164,17 @@ def propose_fix_pr(repo_owner: str, repo_name: str, branch: str, title: str, bod
         dry_run=True  # Enforced
     )
 
-# Use this tool in your 'tools' list instead
-propose_fix_tool = StructuredTool.from_function(
-    func=propose_fix_pr,
-    name="propose_fix_pr",
-    description="Preview security fixes. Does NOT create a real PR.",
-    args_schema=ProposeFixArgs,
-    handle_tool_errors=False,
+propose_fix_tool = with_github_vault(
+    StructuredTool.from_function(
+        func=propose_fix_pr,
+        name="propose_fix_pr",
+        description="Preview security fixes. Does NOT create a real PR.",
+        args_schema=ProposeFixArgs,
+        handle_tool_errors=False,
+    )
 )
 
 # ── Tool 1: Fetch IaC Files ───────────────────────────────────────────────
-@with_github_vault
 def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
     try:
         credentials = get_credentials_from_token_vault()
@@ -207,12 +207,14 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
             ) from e
         raise
 
-fetch_iac_tool = StructuredTool.from_function(
-    func=fetch_iac_files,
-    name="fetch_iac_files",
-    description="Fetch all Terraform/CloudFormation files recursively from a GitHub repository.",
-    args_schema=FetchIacFilesArgs,
-    handle_tool_errors=False,
+fetch_iac_tool = with_github_vault(
+    StructuredTool.from_function(
+        func=fetch_iac_files,
+        name="fetch_iac_files",
+        description="Fetch all Terraform/CloudFormation files recursively from a GitHub repository.",
+        args_schema=FetchIacFilesArgs,
+        handle_tool_errors=False,
+    )
 )
 
 # ── Tool 2: Scan IaC Security Issues ─────────────────────────────────────
@@ -309,7 +311,6 @@ scan_tool = StructuredTool.from_function(
 )
 
 # ── Tool 3: Create Fix PR (with dry_run safety) ───────────────────────────
-@with_github_vault
 def create_fix_pr(
     repo_owner: str,
     repo_name: str,
@@ -389,13 +390,17 @@ agent_llm = ChatOpenAI(
 
 system_prompt = """You are IaC Sentinel, an elite DevSecOps AI security agent.
 
-Your workflow:
-1. Use fetch_iac_files to retrieve infrastructure code.
-2. Use scan_iac_security_issues to analyze the code.
-3. If HIGH severity issues are found, use propose_fix_pr to suggest fixes. 
-   Explain that this is a preview and requires manual review."""
+CRITICAL INSTRUCTION: You CANNOT scan a repository without fetching its files first. 
 
-agent_executor = create_react_agent(agent_llm, tools, state_modifier=system_prompt)
+Your strict workflow:
+1. IMMEDIATELY use the `fetch_iac_files` tool using the repo_owner and repo_name provided.
+2. Wait for the files to be returned.
+3. Pass the returned files into the `scan_iac_security_issues` tool.
+4. If HIGH severity issues are found, use the `propose_fix_pr` tool.
+
+Never skip step 1. Do not ask the user for code. If a tool fails, report the exact error."""
+
+agent_executor = create_react_agent(agent_llm, tools, prompt=system_prompt)
 
 # ── Endpoints ─────────────────────────────────────────────────────────────
 class ActRequest(BaseModel):
@@ -441,4 +446,4 @@ def get_audit():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("application:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("application:app", host="127.0.0.1", port=8000, reload=True)
