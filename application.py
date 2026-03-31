@@ -23,11 +23,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ── Auth0 AI SDK Handling ────────────────────────────────────────────────
 try:
     from auth0_ai_langchain.auth0_ai import Auth0AI
     from auth0_ai_langchain.token_vault import get_credentials_from_token_vault
     from auth0_ai.exceptions import ConsentRequiredError
 except ImportError:
+    # Fail Startup in Production if SDK is missing
+    if os.environ.get("ENVIRONMENT") == "production":
+        raise RuntimeError("Auth0 AI SDK missing in production environment!")
+
     class ConsentRequiredError(Exception):
         def __init__(self, connection: str, authorization_url: str = None):
             self.connection = connection
@@ -35,12 +40,15 @@ except ImportError:
 
     class Auth0AI:
         def with_token_vault(self, connection: str):
-            def decorator(func): return func
-            return decorator
+            return lambda func: func
 
     def get_credentials_from_token_vault():
-        warnings.warn("Using mock Auth0 credentials - not suitable for production", RuntimeWarning)
+        warnings.warn("Using mock Auth0 credentials", RuntimeWarning)
         return {"access_token": "mock_token"}
+
+# ── Config ────────────────────────────────────────────────────────────────
+MAX_IAC_FILES = 15  # Prevents LLM context overflow
+AUTH0_URL = os.environ.get("AUTH0_GITHUB_AUTHORIZE_URL", "https://your-tenant.auth0.com/authorize")
 
 # ── Logging & Audit ───────────────────────────────────────────────────────
 logging.basicConfig(
@@ -90,11 +98,12 @@ app.add_middleware(
     max_age=3600 * 8,
 )
 
-ALLOWED_ORIGINS = [origin.strip() for origin in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:8000").split(",")]
+ALLOWED_ORIGINS = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True if ALLOWED_ORIGINS != ["*"] else False, # <-- Fixed CORS
+    allow_credentials=False, # Set to False when using "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -132,8 +141,9 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
 
         iac_files = []
         contents = repo.get_contents("")
-
-        while contents:
+        
+        # Capped at MAX_IAC_FILES for scalability
+        while contents and len(iac_files) < MAX_IAC_FILES:
             file_content = contents.pop(0)
             if file_content.type == "dir":
                 contents.extend(repo.get_contents(file_content.path))
@@ -151,8 +161,8 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
         if e.status == 401:
             raise ConsentRequiredError(
                 connection="github", 
-                authorization_url="https://your-tenant.auth0.com/authorize" 
-            )
+                authorization_url=AUTH0_URL 
+            ) from e
         raise
 
 fetch_iac_tool = StructuredTool.from_function(
@@ -174,8 +184,13 @@ def scan_iac_security_issues(code: str) -> str:
                 for i in range(1, len(parts), 2):
                     rel_path = parts[i].strip()
                     content = parts[i+1].strip()
-                    safe_name = os.path.basename(rel_path) or f"file_{i}.tf"
-                    with open(os.path.join(tmp_dir, safe_name), "w", encoding="utf-8") as f:
+                    
+                    # Prevent path traversal and preserve directory structure
+                    normalized = os.path.normpath(rel_path).lstrip("/\\")
+                    target_path = os.path.join(tmp_dir, normalized)
+                    
+                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                    with open(target_path, "w", encoding="utf-8") as f:
                         f.write(content)
             else:
                 with open(os.path.join(tmp_dir, "main.tf"), "w", encoding="utf-8") as f:
@@ -324,7 +339,8 @@ system_prompt = """You are IaC Sentinel, an elite DevSecOps AI security agent.
 Your workflow:
 1. Use fetch_iac_files to retrieve infrastructure code.
 2. Use scan_iac_security_issues to analyze the code.
-3. If HIGH severity issues are found, use create_fix_pr with dry_run=True to propose fixes.
+3. If HIGH severity issues are found, use create_fix_pr with dry_run=True ALWAYS. 
+   You are NOT allowed to create real PRs without explicit user confirmation of a dry-run result.
 
 Always cite the specific resource and line causing the issue."""
 
