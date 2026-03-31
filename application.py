@@ -164,20 +164,20 @@ def propose_fix_pr(repo_owner: str, repo_name: str, branch: str, title: str, bod
         dry_run=True  # Enforced
     )
 
-propose_fix_tool = with_github_vault(
-    StructuredTool.from_function(
-        func=propose_fix_pr,
-        name="propose_fix_pr",
-        description="Preview security fixes. Does NOT create a real PR.",
-        args_schema=ProposeFixArgs,
-        handle_tool_errors=False,
-    )
+propose_fix_tool = StructuredTool.from_function(
+    func=propose_fix_pr,
+    name="propose_fix_pr",
+    description="Preview security fixes. Does NOT create a real PR.",
+    args_schema=ProposeFixArgs,
+    handle_tool_errors=False,
 )
 
 # ── Tool 1: Fetch IaC Files ───────────────────────────────────────────────
 def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
     try:
         credentials = get_credentials_from_token_vault()
+        logger.info(f"Got credentials: {list(credentials.keys())}")
+        logger.info(f"Token preview: {credentials.get('access_token', '')[:10]}...")
         g = Github(credentials["access_token"])
         repo = g.get_repo(f"{repo_owner}/{repo_name}")
 
@@ -191,8 +191,13 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
                 contents.extend(repo.get_contents(file_content.path))
             elif file_content.name.endswith((".tf", ".yaml", ".yml", ".json")):
                 try:
-                    decoded = file_content.decoded_content.decode("utf-8")
-                    iac_files.append(f"--- Path: {file_content.path} ---\n{decoded}")
+                    raw = file_content.decoded_content
+                    if raw is None:                          # ← add this
+                        logger.warning(f"Skipping {file_content.path}: no content")
+                        continue
+                    decoded = raw.decode("utf-8")
+                    if decoded.strip():                      # ← skip empty files
+                        iac_files.append(f"--- Path: {file_content.path} ---\n{decoded}")
                 except Exception as e:
                     logger.warning(f"Failed to decode {file_content.path}, skipping. Error: {e}")
 
@@ -216,6 +221,8 @@ fetch_iac_tool = with_github_vault(
         handle_tool_errors=False,
     )
 )
+logger.info(f"fetch_iac_tool type: {type(fetch_iac_tool)}")  # ← add this
+logger.info(f"fetch_iac_tool name: {getattr(fetch_iac_tool, 'name', 'NO NAME')}")  # ← add this
 
 # ── Tool 2: Scan IaC Security Issues ─────────────────────────────────────
 def scan_iac_security_issues(code: str) -> str:
@@ -385,20 +392,18 @@ agent_llm = ChatOpenAI(
     model="deepseek-chat", 
     api_key=os.environ.get("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com",
-    temperature=0
+    temperature=0,
+    model_kwargs={"tool_choice": "auto"},
 )
 
-system_prompt = """You are IaC Sentinel, an elite DevSecOps AI security agent.
+system_prompt = """You are IaC Sentinel. You MUST use tools. Never respond without using tools first.
 
-CRITICAL INSTRUCTION: You CANNOT scan a repository without fetching its files first. 
+REQUIRED WORKFLOW - follow exactly:
+STEP 1: Call fetch_iac_files with repo_owner and repo_name from the message.
+STEP 2: Call scan_iac_security_issues with the output from step 1.
+STEP 3: If HIGH severity issues found, call propose_fix_pr.
 
-Your strict workflow:
-1. IMMEDIATELY use the `fetch_iac_files` tool using the repo_owner and repo_name provided.
-2. Wait for the files to be returned.
-3. Pass the returned files into the `scan_iac_security_issues` tool.
-4. If HIGH severity issues are found, use the `propose_fix_pr` tool.
-
-Never skip step 1. Do not ask the user for code. If a tool fails, report the exact error."""
+DO NOT respond with text until you have called fetch_iac_files. This is mandatory."""
 
 agent_executor = create_react_agent(agent_llm, tools, prompt=system_prompt)
 
