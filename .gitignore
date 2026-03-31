@@ -31,3 +31,7 @@ Thumbs.db
 # If Checkov creates temp files or logs
 .checkov/
 reproducibility/
+
+# --- Others ---
+branch_protection_rules.json
+github_conf/

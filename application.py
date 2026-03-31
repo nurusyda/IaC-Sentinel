@@ -9,30 +9,43 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List, Dict
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware  # <-- Fixed import
-from pydantic import BaseModel, Field
-from github import Github, GithubException
+# ── 1. INITIALIZE LOGGING (Once and for all) ──────────────────────────────
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-from langchain_core.tools import StructuredTool
-from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import create_react_agent
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# ── Auth0 AI SDK Handling ────────────────────────────────────────────────
+# ── Auth0 AI SDK Handling (Corrected Import Paths) ───────────────────────
 try:
+    # Import the main class
     from auth0_ai_langchain.auth0_ai import Auth0AI
+    
+    # ✅ FIX: Import from token_vault, not auth0_ai
     from auth0_ai_langchain.token_vault import get_credentials_from_token_vault
-    from auth0_ai.exceptions import ConsentRequiredError
-except ImportError:
-    # Fail Startup in Production if SDK is missing
-    if os.environ.get("ENVIRONMENT") == "production":
-        raise RuntimeError("Auth0 AI SDK missing in production environment!")
+    
+    # Try to find ConsentRequiredError (try multiple possible locations)
+    try:
+        from auth0_ai_langchain.exceptions import ConsentRequiredError
+    except ImportError:
+        try:
+            from auth0_ai.exceptions import ConsentRequiredError
+        except ImportError:
+            # Last resort fallback
+            class ConsentRequiredError(Exception):
+                def __init__(self, connection: str, authorization_url: str = None):
+                    self.connection = connection
+                    self.authorization_url = authorization_url
 
+    _AUTH0_SDK_AVAILABLE = True
+    logger.info("🚀 AUTH0 SDK LOADED: Token Vault is active.")
+
+except ImportError as e:
+    _AUTH0_SDK_AVAILABLE = False
+    logger.warning(f"⚠️ Auth0 SDK failed to load (using mock-mode): {e}")
+    
+    # Fallback Mock Classes
     class ConsentRequiredError(Exception):
         def __init__(self, connection: str, authorization_url: str = None):
             self.connection = connection
@@ -46,24 +59,26 @@ except ImportError:
         warnings.warn("Using mock Auth0 credentials", RuntimeWarning)
         return {"access_token": "mock_token"}
 
-# ── Config ────────────────────────────────────────────────────────────────
-MAX_IAC_FILES = 15  # Prevents LLM context overflow
-AUTH0_URL = os.environ.get("AUTH0_GITHUB_AUTHORIZE_URL", "https://your-tenant.auth0.com/authorize")
+# ── 3. CORE IMPORTS ───────────────────────────────────────────────────────
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from pydantic import BaseModel, Field
+from github import Github, GithubException
+from langchain_core.tools import StructuredTool
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+from dotenv import load_dotenv
 
-# ── Logging & Audit ───────────────────────────────────────────────────────
-logging.basicConfig(
-    stream=sys.stdout,
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger(__name__)
+load_dotenv()
 
-# Use deque for O(1) performance
+# ── 4. AUDIT LOG SETUP ────────────────────────────────────────────────────
 AUDIT_LOG: deque = deque(maxlen=50)
 
 def log_audit_event(action: str, details: str = "", target: str = "Internal"):
     event = {
-        "timestamp": datetime.now(timezone.utc).isoformat(), # <-- Fixed deprecation
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "action": action,
         "details": details,
         "target": target,
@@ -71,6 +86,10 @@ def log_audit_event(action: str, details: str = "", target: str = "Internal"):
     }
     AUDIT_LOG.append(event)
     logger.info(f"AUDIT: {event}")
+
+# ── CONFIG ────────────────────────────────────────────────────────────────
+MAX_IAC_FILES = 15
+AUTH0_URL = os.environ.get("AUTH0_GITHUB_AUTHORIZE_URL", "https://your-tenant.auth0.com/authorize")
 
 # ── Startup Validation & App Config ───────────────────────────────────────
 SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY")
@@ -112,7 +131,10 @@ application = app  # Required for Elastic Beanstalk
 
 # ── Auth0 Token Vault ─────────────────────────────────────────────────────
 auth0_ai = Auth0AI()
-with_github_vault = auth0_ai.with_token_vault(connection="github")
+with_github_vault = auth0_ai.with_token_vault(
+    connection="github",
+    scopes=["repo", "read:user"],
+)
 
 # ── Tool Schemas (Pydantic) ───────────────────────────────────────────────
 class FetchIacFilesArgs(BaseModel):
@@ -122,14 +144,30 @@ class FetchIacFilesArgs(BaseModel):
 class ScanIacArgs(BaseModel):
     code: str = Field(description="IaC code to scan")
 
-class CreateFixPrArgs(BaseModel):
+class ProposeFixArgs(BaseModel):
     repo_owner: str
     repo_name: str
     branch: str
     title: str
     body: str
     files_to_change: list
-    dry_run: bool = Field(default=True, description="Safe by default preview")
+
+def propose_fix_pr(repo_owner: str, repo_name: str, branch: str, title: str, body: str, files_to_change: list) -> str:
+    """Hardcoded to ALWAYS be a dry run. The AI cannot change this."""
+    return create_fix_pr(
+        repo_owner=repo_owner, repo_name=repo_name, branch=branch,
+        title=title, body=body, files_to_change=files_to_change,
+        dry_run=True  # Enforced
+    )
+
+# Use this tool in your 'tools' list instead
+propose_fix_tool = StructuredTool.from_function(
+    func=propose_fix_pr,
+    name="propose_fix_pr",
+    description="Preview security fixes. Does NOT create a real PR.",
+    args_schema=ProposeFixArgs,
+    handle_tool_errors=False,
+)
 
 # ── Tool 1: Fetch IaC Files ───────────────────────────────────────────────
 @with_github_vault
@@ -169,7 +207,8 @@ fetch_iac_tool = StructuredTool.from_function(
     func=fetch_iac_files,
     name="fetch_iac_files",
     description="Fetch all Terraform/CloudFormation files recursively from a GitHub repository.",
-    args_schema=FetchIacFilesArgs, # <-- Fixed Schema
+    args_schema=FetchIacFilesArgs,
+    handle_tool_errors=False,
 )
 
 # ── Tool 2: Scan IaC Security Issues ─────────────────────────────────────
@@ -187,7 +226,17 @@ def scan_iac_security_issues(code: str) -> str:
                     
                     # Prevent path traversal and preserve directory structure
                     normalized = os.path.normpath(rel_path).lstrip("/\\")
+
+                    if normalized.startswith("..") or ".." in normalized:
+                        logger.warning(f"Blocked path traversal attempt: {rel_path}")
+                        continue
+
                     target_path = os.path.join(tmp_dir, normalized)
+                    
+                    # Final security check: ensure it didn't resolve outside tmp_dir
+                    if not os.path.realpath(target_path).startswith(os.path.realpath(tmp_dir)):
+                        logger.warning(f"Blocked path escape: {rel_path}")
+                        continue
                     
                     os.makedirs(os.path.dirname(target_path), exist_ok=True)
                     with open(target_path, "w", encoding="utf-8") as f:
@@ -316,15 +365,12 @@ def create_fix_pr(
                 pass 
         return f"PR creation failed (rolled back branch): {str(e)}"
 
-create_fix_pr_tool = StructuredTool.from_function(
-    func=create_fix_pr,
-    name="create_fix_pr",
-    description="Create a GitHub PR with security fixes, or suggest the fix in dry_run mode.",
-    args_schema=CreateFixPrArgs, # <-- Fixed Schema
-)
+
 
 # ── Agent ─────────────────────────────────────────────────────────────────
-tools = [fetch_iac_tool, scan_tool, create_fix_pr_tool]
+# create_fix_pr exists but is intentionally NOT in tools.
+# propose_fix_tool wraps it with dry_run=True enforced.
+tools = [fetch_iac_tool, scan_tool, propose_fix_tool]
 
 # Direct DeepSeek Configuration for the Agent Brain
 agent_llm = ChatOpenAI(
@@ -339,10 +385,8 @@ system_prompt = """You are IaC Sentinel, an elite DevSecOps AI security agent.
 Your workflow:
 1. Use fetch_iac_files to retrieve infrastructure code.
 2. Use scan_iac_security_issues to analyze the code.
-3. If HIGH severity issues are found, use create_fix_pr with dry_run=True ALWAYS. 
-   You are NOT allowed to create real PRs without explicit user confirmation of a dry-run result.
-
-Always cite the specific resource and line causing the issue."""
+3. If HIGH severity issues are found, use propose_fix_pr to suggest fixes. 
+   Explain that this is a preview and requires manual review."""
 
 agent_executor = create_react_agent(agent_llm, tools, state_modifier=system_prompt)
 
@@ -356,31 +400,40 @@ class ActRequest(BaseModel):
 async def act_endpoint(req: ActRequest):
     try:
         context_msg = f"Target Repo: {req.repo_owner}/{req.repo_name}. Request: {req.user_message}"
-        # <-- Fixed Async Blocking
         result = await agent_executor.ainvoke({"messages": [HumanMessage(content=context_msg)]})
+
+        # 🔍 CHECK: Did the AI "trap" a consent error in its history?
+        for msg in result["messages"]:
+            # If the Auth0 SDK raised an error, it often appears in the Tool messages
+            if hasattr(msg, "content") and "ConsentRequiredError" in str(msg.content):
+                # If we find it, manually re-raise it so the 'except' block below catches it
+                raise ConsentRequiredError(connection="github", authorization_url=AUTH0_URL)
 
         return {
             "response": result["messages"][-1].content,
-            "recent_audit": list(AUDIT_LOG)[-5:] # Convert deque to list for JSON serialization
+            "recent_audit": list(AUDIT_LOG)[-5:]
         }
 
     except ConsentRequiredError as e:
+        # 🚀 THE GOAL: This sends the 403 + Login Link to your Swagger UI
         raise HTTPException(
             status_code=403,
             detail={
                 "error": "consent_required",
-                "message": "GitHub consent required via Auth0 Token Vault.",
-                "authorization_url": getattr(e, "authorization_url", None)
+                "connection": e.connection,
+                "authorization_url": e.authorization_url
             }
-        )
+        ) from e
     except Exception as e:
         logger.error(f"Agent error: {e}")
-        # <-- Fixed 500 error leak
-        raise HTTPException(status_code=500, detail="Internal server error. Check logs for details.")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "token_vault": "active"}
+    return {
+        "status": "healthy", 
+        "token_vault": "active" if _AUTH0_SDK_AVAILABLE else "mock-mode"
+    }
 
 @app.get("/audit")
 def get_audit():
