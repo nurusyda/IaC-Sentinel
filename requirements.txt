@@ -1,32 +1,25 @@
 # Core Web Framework
-fastapi==0.115.0
-uvicorn[standard]==0.30.0
+fastapi>=0.115.0,<0.116.0
+uvicorn[standard]>=0.30.0,<0.31.0
+starlette>=0.41.0,<0.42.0
 
 # Data validation
-pydantic==2.9.0
+pydantic>=2.9.0,<3.0.0
 
 # GitHub API
-PyGithub==2.5.0
+PyGithub>=2.5.0,<3.0.0
 
-# LangChain ecosystem - let pip resolve compatible versions (safest approach)
-langchain-core
-langgraph
-langchain-openai
+# LangChain ecosystem
+langchain-core>=0.3.0,<0.4.0
+langgraph>=0.3.25,<0.4.0
+langchain-openai>=0.3.0,<0.4.0
 
-# Auth0 AI SDK for Token Vault
+# Auth0 AI SDK
 auth0-ai-langchain==0.1.0
 
-# Environment variables
-python-dotenv==1.0.0
-
-# Session middleware (explicit pin to avoid conflicts)
-starlette==0.41.0
-
-# IaC Security Scanner
-checkov==3.2.0
-
-# HTTP client
-httpx==0.27.0
-
-# Token counting for LLMs
-tiktoken==0.7.0
+# Utilities
+python-dotenv>=1.0.0,<2.0.0
+checkov>=3.2.0,<4.0.0
+httpx>=0.27.0,<0.28.0
+tiktoken>=0.7.0,<0.8.0
+itsdangerous>=2.2.0,<3.0.0

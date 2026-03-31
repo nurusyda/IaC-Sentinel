@@ -1,0 +1,33 @@
+# --- Python & Bytecode ---
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.python-version
+
+# --- Virtual Environment ---
+# This ignores your 'venv' folder so you don't upload 200MB of libraries to GitHub
+venv/
+ENV/
+env/
+.venv/
+
+# --- Environment Variables & Secrets ---
+# CRITICAL: Never upload these to GitHub
+.env
+.env.local
+.env.*
+.secrets
+*.pem
+*.key
+
+# --- IDE & OS Files ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Project Specific ---
+# If Checkov creates temp files or logs
+.checkov/
+reproducibility/

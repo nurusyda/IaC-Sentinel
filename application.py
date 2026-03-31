@@ -3,14 +3,16 @@ import logging
 import sys
 import subprocess
 import json
+import warnings
+from collections import deque
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.sessions import SessionMiddleware
-from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware  # <-- Fixed import
+from pydantic import BaseModel, Field
 from github import Github, GithubException
 
 from langchain_core.tools import StructuredTool
@@ -18,6 +20,7 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from dotenv import load_dotenv
+
 load_dotenv()
 
 try:
@@ -36,6 +39,7 @@ except ImportError:
             return decorator
 
     def get_credentials_from_token_vault():
+        warnings.warn("Using mock Auth0 credentials - not suitable for production", RuntimeWarning)
         return {"access_token": "mock_token"}
 
 # ── Logging & Audit ───────────────────────────────────────────────────────
@@ -46,22 +50,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-AUDIT_LOG: List[Dict] = []
+# Use deque for O(1) performance
+AUDIT_LOG: deque = deque(maxlen=50)
 
 def log_audit_event(action: str, details: str = "", target: str = "Internal"):
     event = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(), # <-- Fixed deprecation
         "action": action,
         "details": details,
         "target": target,
         "source": "Token Vault",
     }
     AUDIT_LOG.append(event)
-    if len(AUDIT_LOG) > 50:
-        AUDIT_LOG.pop(0)
     logger.info(f"AUDIT: {event}")
 
-# ── Lifespan ──────────────────────────────────────────────────────────────
+# ── Startup Validation & App Config ───────────────────────────────────────
+SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY")
+if not SESSION_SECRET_KEY:
+    raise RuntimeError("SESSION_SECRET_KEY environment variable is required")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("IaC Sentinel starting up with Auth0 Token Vault...")
@@ -70,23 +77,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="IaC Sentinel",
-    description="AI-powered IaC security scanner using Auth0 Token Vault for secure GitHub delegation.",
+    description="AI-powered IaC security scanner using Auth0 Token Vault.",
     version="1.0.0",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.environ["SESSION_SECRET_KEY"],  
+    secret_key=SESSION_SECRET_KEY,
     session_cookie="iac_sentinel_session",
-    https_only=os.environ.get("ENVIRONMENT") == "production", 
+    https_only=os.environ.get("ENVIRONMENT") == "production",
     max_age=3600 * 8,
 )
 
+ALLOWED_ORIGINS = [origin.strip() for origin in os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:8000").split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True if ALLOWED_ORIGINS != ["*"] else False, # <-- Fixed CORS
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -97,11 +105,26 @@ application = app  # Required for Elastic Beanstalk
 auth0_ai = Auth0AI()
 with_github_vault = auth0_ai.with_token_vault(connection="github")
 
+# ── Tool Schemas (Pydantic) ───────────────────────────────────────────────
+class FetchIacFilesArgs(BaseModel):
+    repo_owner: str = Field(description="GitHub repository owner")
+    repo_name: str = Field(description="GitHub repository name")
+
+class ScanIacArgs(BaseModel):
+    code: str = Field(description="IaC code to scan")
+
+class CreateFixPrArgs(BaseModel):
+    repo_owner: str
+    repo_name: str
+    branch: str
+    title: str
+    body: str
+    files_to_change: list
+    dry_run: bool = Field(default=True, description="Safe by default preview")
+
 # ── Tool 1: Fetch IaC Files ───────────────────────────────────────────────
-# Decorator on the function FIRST, then wrap in StructuredTool
 @with_github_vault
 def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
-    """Fetches all .tf and .yaml files recursively from the GitHub repository."""
     try:
         credentials = get_credentials_from_token_vault()
         g = Github(credentials["access_token"])
@@ -118,50 +141,43 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
                 try:
                     decoded = file_content.decoded_content.decode("utf-8")
                     iac_files.append(f"--- Path: {file_content.path} ---\n{decoded}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to decode {file_content.path}, skipping. Error: {e}")
 
         log_audit_event("FETCH_IAC", f"Retrieved {len(iac_files)} files", f"{repo_owner}/{repo_name}")
         return "\n\n".join(iac_files) if iac_files else "No IaC files found."
 
     except GithubException as e:
         if e.status == 401:
-            # Raise the specific error that triggers the Auth0 re-auth flow!
             raise ConsentRequiredError(
                 connection="github", 
-                authorization_url="https://your-tenant.auth0.com/authorize" # Update if you have your exact Auth0 URL
+                authorization_url="https://your-tenant.auth0.com/authorize" 
             )
         raise
 
 fetch_iac_tool = StructuredTool.from_function(
     func=fetch_iac_files,
     name="fetch_iac_files",
-    description="Fetch all Terraform/CloudFormation files recursively from a GitHub repository. Always use this first.",
-    args_schema={"repo_owner": str, "repo_name": str},
+    description="Fetch all Terraform/CloudFormation files recursively from a GitHub repository.",
+    args_schema=FetchIacFilesArgs, # <-- Fixed Schema
 )
 
 # ── Tool 2: Scan IaC Security Issues ─────────────────────────────────────
 def scan_iac_security_issues(code: str) -> str:
-    """Runs Checkov for rule-based scanning, then uses LLM for remediation explanation."""
-
     checkov_results = ""
     try:
         import tempfile, os, re
         
         with tempfile.TemporaryDirectory() as tmp_dir:
-            # Split the giant string back into individual files based on our header format
             parts = re.split(r'---\s*Path:\s*(.+?)\s*---', code)
-            
             if len(parts) > 1:
                 for i in range(1, len(parts), 2):
                     rel_path = parts[i].strip()
                     content = parts[i+1].strip()
-                    # Flatten the structure into the temp dir for a quick scan
                     safe_name = os.path.basename(rel_path) or f"file_{i}.tf"
                     with open(os.path.join(tmp_dir, safe_name), "w", encoding="utf-8") as f:
                         f.write(content)
             else:
-                # Fallback if no headers found
                 with open(os.path.join(tmp_dir, "main.tf"), "w", encoding="utf-8") as f:
                     f.write(code)
 
@@ -181,7 +197,14 @@ def scan_iac_security_issues(code: str) -> str:
     except Exception as e:
         checkov_results = f"Checkov unavailable: {e}"
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    # Direct DeepSeek Configuration for the Scanner
+    llm = ChatOpenAI(
+        model="deepseek-chat", 
+        api_key=os.environ.get("DEEPSEEK_API_KEY"),
+        base_url="https://api.deepseek.com",
+        temperature=0
+    )
+    
     prompt = f"""You are a senior Cloud Security Engineer reviewing Infrastructure as Code.
 
 Checkov scan results:
@@ -211,7 +234,7 @@ scan_tool = StructuredTool.from_function(
     func=scan_iac_security_issues,
     name="scan_iac_security_issues",
     description="Analyze IaC code for security issues using rule-based scanning + LLM explanation.",
-    args_schema={"code": str},
+    args_schema=ScanIacArgs, # <-- Fixed Schema
 )
 
 # ── Tool 3: Create Fix PR (with dry_run safety) ───────────────────────────
@@ -223,10 +246,8 @@ def create_fix_pr(
     title: str,
     body: str,
     files_to_change: list,
-    dry_run: bool = True  # Safe by default — set False to actually create PR
+    dry_run: bool = True  
 ) -> str:
-    """Creates a PR with security fixes, or returns suggested diff in dry_run mode."""
-
     if dry_run:
         suggestion = f"[DRY RUN] Would create PR '{title}' on {repo_owner}/{repo_name}\n\n"
         suggestion += "Proposed changes:\n"
@@ -235,6 +256,7 @@ def create_fix_pr(
         log_audit_event("DRY_RUN_PR", f"Suggested fix for {repo_owner}/{repo_name}")
         return suggestion
 
+    repo = None
     ref_created = False
     try:
         credentials = get_credentials_from_token_vault()
@@ -243,63 +265,68 @@ def create_fix_pr(
 
         base_sha = repo.get_branch(repo.default_branch).commit.sha
         repo.create_git_ref(ref=f"refs/heads/{branch}", sha=base_sha)
-        ref_created = True # Track that the branch exists!
+        ref_created = True
 
         for f in files_to_change:
-            repo.update_file(
-                path=f["path"],
-                message=f"Security fix: {title}",
-                content=f["content"],
-                sha=repo.get_contents(f["path"]).sha,
-                branch=branch
-            )
+            try:
+                # <-- Fixed: Handle both update and create
+                existing = repo.get_contents(f["path"], ref=branch)
+                repo.update_file(
+                    path=f["path"],
+                    message=f"Security fix: {title}",
+                    content=f["content"],
+                    sha=existing.sha,
+                    branch=branch
+                )
+            except GithubException as e:
+                if e.status == 404:
+                    repo.create_file(
+                        path=f["path"],
+                        message=f"Security fix: {title}",
+                        content=f["content"],
+                        branch=branch
+                    )
+                else:
+                    raise
 
         pr = repo.create_pull(title=title, body=body, head=branch, base=repo.default_branch)
         log_audit_event("CREATE_PR", f"PR #{pr.number} created", f"{repo_owner}/{repo_name}")
         return f"Success! PR created: {pr.html_url}"
 
     except Exception as e:
-        # CLEANUP: Delete the stray branch if the PR process failed
-        if ref_created:
+        if ref_created and repo is not None: # <-- Fixed cleanup bug
             try:
                 repo.get_git_ref(f"heads/{branch}").delete()
             except Exception:
-                pass # Ignore errors during cleanup
+                pass 
         return f"PR creation failed (rolled back branch): {str(e)}"
 
 create_fix_pr_tool = StructuredTool.from_function(
     func=create_fix_pr,
     name="create_fix_pr",
-    description=(
-        "Create a GitHub PR with security fixes, or suggest the fix in dry_run mode. "
-        "Use dry_run=True (default) to safely preview changes. "
-        "files_to_change is a list of dicts with 'path' and 'content'."
-    ),
-    args_schema={
-        "repo_owner": str,
-        "repo_name": str,
-        "branch": str,
-        "title": str,
-        "body": str,
-        "files_to_change": list,
-        "dry_run": bool,
-    },
+    description="Create a GitHub PR with security fixes, or suggest the fix in dry_run mode.",
+    args_schema=CreateFixPrArgs, # <-- Fixed Schema
 )
 
 # ── Agent ─────────────────────────────────────────────────────────────────
 tools = [fetch_iac_tool, scan_tool, create_fix_pr_tool]
-agent_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+# Direct DeepSeek Configuration for the Agent Brain
+agent_llm = ChatOpenAI(
+    model="deepseek-chat", 
+    api_key=os.environ.get("DEEPSEEK_API_KEY"),
+    base_url="https://api.deepseek.com",
+    temperature=0
+)
 
 system_prompt = """You are IaC Sentinel, an elite DevSecOps AI security agent.
 
 Your workflow:
-1. Use fetch_iac_files to retrieve all infrastructure code from the target repository.
-2. Use scan_iac_security_issues to analyze the fetched code for vulnerabilities.
+1. Use fetch_iac_files to retrieve infrastructure code.
+2. Use scan_iac_security_issues to analyze the code.
 3. If HIGH severity issues are found, use create_fix_pr with dry_run=True to propose fixes.
-   Only use dry_run=False if the user explicitly requests a real PR.
 
-Be concise. Always cite the specific resource and line causing the issue.
-In production, every token exchange is logged for SOC audit purposes."""
+Always cite the specific resource and line causing the issue."""
 
 agent_executor = create_react_agent(agent_llm, tools, state_modifier=system_prompt)
 
@@ -313,11 +340,12 @@ class ActRequest(BaseModel):
 async def act_endpoint(req: ActRequest):
     try:
         context_msg = f"Target Repo: {req.repo_owner}/{req.repo_name}. Request: {req.user_message}"
-        result = agent_executor.invoke({"messages": [HumanMessage(content=context_msg)]})
+        # <-- Fixed Async Blocking
+        result = await agent_executor.ainvoke({"messages": [HumanMessage(content=context_msg)]})
 
         return {
             "response": result["messages"][-1].content,
-            "recent_audit": AUDIT_LOG[-5:]
+            "recent_audit": list(AUDIT_LOG)[-5:] # Convert deque to list for JSON serialization
         }
 
     except ConsentRequiredError as e:
@@ -331,7 +359,8 @@ async def act_endpoint(req: ActRequest):
         )
     except Exception as e:
         logger.error(f"Agent error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # <-- Fixed 500 error leak
+        raise HTTPException(status_code=500, detail="Internal server error. Check logs for details.")
 
 @app.get("/health")
 def health():
@@ -339,8 +368,7 @@ def health():
 
 @app.get("/audit")
 def get_audit():
-    # In production: replace AUDIT_LOG with CloudWatch/CloudTrail queries
-    return {"total_events": len(AUDIT_LOG), "logs": AUDIT_LOG[::-1]}
+    return {"total_events": len(AUDIT_LOG), "logs": list(AUDIT_LOG)[::-1]}
 
 if __name__ == "__main__":
     import uvicorn
