@@ -35,3 +35,4 @@ reproducibility/
 # --- Others ---
 branch_protection_rules.json
 github_conf/
+*.sh

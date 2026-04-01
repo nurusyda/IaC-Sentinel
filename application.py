@@ -252,9 +252,9 @@ propose_fix_tool = StructuredTool.from_function(
 # ── 11. TOOL 1: FETCH IAC FILES ───────────────────────────────────────────
 def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
     try:
-        credentials = get_credentials_from_token_vault()
-        logger.info(f"Got credentials: {list(credentials.keys())}")
-        logger.info(f"Token preview: {credentials.get('access_token', '')[:10]}...")
+        # Temporary: use direct token instead of vault
+        token = os.environ.get("MY_GITHUB_TOKEN")
+        credentials = {"access_token": token}
         g = Github(credentials["access_token"])
         repo = g.get_repo(f"{repo_owner}/{repo_name}")
 
@@ -295,17 +295,13 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
             ) from e
         raise
 
-fetch_iac_tool = with_github_vault(
-    StructuredTool.from_function(
-        func=fetch_iac_files,
-        name="fetch_iac_files",
-        description="Fetch all Terraform/CloudFormation files recursively from a GitHub repository.",
-        args_schema=FetchIacFilesArgs,
-        handle_tool_errors=False,
-    )
+fetch_iac_tool = StructuredTool.from_function(
+    func=fetch_iac_files,
+    name="fetch_iac_files",
+    description="Fetch all Terraform/CloudFormation files recursively from a GitHub repository.",
+    args_schema=FetchIacFilesArgs,
+    handle_tool_errors=False,
 )
-logger.info(f"fetch_iac_tool type: {type(fetch_iac_tool)}")
-logger.info(f"fetch_iac_tool name: {getattr(fetch_iac_tool, 'name', 'NO NAME')}")
 
 # ── 12. TOOL 2: SCAN IAC SECURITY ISSUES ─────────────────────────────────
 def scan_iac_security_issues(code: str) -> str:
