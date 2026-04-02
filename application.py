@@ -58,6 +58,7 @@ except ImportError as e:
 # ── 3. CORE IMPORTS ───────────────────────────────────────────────────────
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel, Field
 from github import Github, GithubException
@@ -66,6 +67,7 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from dotenv import load_dotenv
+import httpx
 
 load_dotenv()
 
@@ -86,10 +88,14 @@ def log_audit_event(action: str, details: str = "", target: str = "Internal"):
 # ── 5. CONFIG ─────────────────────────────────────────────────────────────
 MAX_IAC_FILES = 15
 
+AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN", "")
+AUTH0_CLIENT_ID = os.environ.get("AUTH0_CLIENT_ID", "")
+AUTH0_CLIENT_SECRET = os.environ.get("AUTH0_CLIENT_SECRET", "")
+
 AUTH0_URL = os.environ.get("AUTH0_GITHUB_AUTHORIZE_URL")
 if not AUTH0_URL and os.environ.get("ENVIRONMENT") == "production":
     raise RuntimeError("AUTH0_GITHUB_AUTHORIZE_URL is required in production")
-AUTH0_URL = AUTH0_URL or "https://your-tenant.auth0.com/authorize"
+AUTH0_URL = AUTH0_URL or f"https://{AUTH0_DOMAIN}/authorize"
 
 SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY")
 if not SESSION_SECRET_KEY:
@@ -434,12 +440,49 @@ DO NOT respond with text until you have called fetch_iac_files. This is mandator
 
 agent_executor = create_react_agent(agent_llm, tools, prompt=system_prompt)
 
-# ── 14. ENDPOINTS ─────────────────────────────────────────────────────────
+# ── 14. REQUEST MODELS ────────────────────────────────────────────────────
 class ActRequest(BaseModel):
     repo_owner: str
     repo_name: str
     user_message: str = "Scan this repository for IaC security issues and propose fixes."
 
+class ConnectRequest(BaseModel):
+    redirect_uri: str = "http://localhost:8000/callback"
+
+class CompleteRequest(BaseModel):
+    auth_session: str
+    connect_code: str
+    redirect_uri: str = "http://localhost:8000/callback"
+
+# ── 15. HELPER: GET MY ACCOUNT API TOKEN ─────────────────────────────────
+async def get_my_account_token() -> str:
+    """Exchange refresh token for My Account API access token."""
+    refresh_token = os.environ.get("AUTH0_REFRESH_TOKEN")
+    if not refresh_token:
+        raise HTTPException(
+            status_code=500,
+            detail="AUTH0_REFRESH_TOKEN not set. Complete the /auth/login flow first."
+        )
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://{AUTH0_DOMAIN}/oauth/token",
+            json={
+                "grant_type": "refresh_token",
+                "client_id": AUTH0_CLIENT_ID,
+                "client_secret": AUTH0_CLIENT_SECRET,
+                "refresh_token": refresh_token,
+                "audience": f"https://{AUTH0_DOMAIN}/me/",
+                "scope": "openid profile offline_access create:me:connected_accounts read:me:connected_accounts delete:me:connected_accounts",
+            }
+        )
+        data = response.json()
+        token = data.get("access_token")
+        if not token:
+            logger.error(f"Failed to get My Account API token: {data}")
+            raise HTTPException(status_code=500, detail=f"Token exchange failed: {data}")
+        return token
+
+# ── 16. AGENT RUNNER ──────────────────────────────────────────────────────
 async def run_agent(job_id: str, req: ActRequest):
     try:
         context_msg = f"Target Repo: {req.repo_owner}/{req.repo_name}. Request: {req.user_message}"
@@ -460,6 +503,162 @@ async def run_agent(job_id: str, req: ActRequest):
         logger.error(f"Agent error: {e}")
         jobs[job_id] = {"status": "error", "error": str(e)}
 
+# ── 17. ENDPOINTS ─────────────────────────────────────────────────────────
+
+# ── Auth Flow: Step 0 — Get initial refresh token ─────────────────────────
+@app.get("/auth/login")
+async def auth_login():
+    """
+    Visit this URL in your browser to get an authorization code.
+    Then exchange it at /auth/token with the code you receive.
+    """
+    url = (
+        f"https://{AUTH0_DOMAIN}/authorize"
+        f"?client_id={AUTH0_CLIENT_ID}"
+        f"&response_type=code"
+        f"&prompt=login"
+        f"&scope=openid%20profile%20offline_access"
+        f"&redirect_uri=http://localhost:8000/callback"
+        f"&state=iac-sentinel-login"
+        f"&audience=https://{AUTH0_DOMAIN}/me/"
+    )
+    return {"login_url": url, "instructions": "Open login_url in your browser, then use /auth/token with the code from the callback URL"}
+
+@app.get("/callback")
+async def callback(code: str = None, connect_code: str = None, state: str = None, error: str = None):
+    """Handles both login callbacks and Connected Accounts callbacks."""
+    if error:
+        return {"error": error, "state": state}
+    if connect_code:
+        # Connected Accounts callback
+        return {
+            "connect_code": connect_code,
+            "state": state,
+            "instructions": "Copy connect_code and POST it to /connect/complete along with your auth_session"
+        }
+    if code:
+        # Login callback
+        return {
+            "code": code,
+            "state": state,
+            "instructions": "Copy this code and POST it to /auth/token to get your refresh token"
+        }
+    return {"message": "Callback received but no code found", "state": state}
+
+class TokenRequest(BaseModel):
+    code: str
+    redirect_uri: str = "http://localhost:8000/callback"
+
+@app.post("/auth/token")
+async def auth_token(req: TokenRequest):
+    """Exchange authorization code for refresh token. Save the refresh_token as AUTH0_REFRESH_TOKEN."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://{AUTH0_DOMAIN}/oauth/token",
+            json={
+                "grant_type": "authorization_code",
+                "code": req.code,
+                "client_id": AUTH0_CLIENT_ID,
+                "client_secret": AUTH0_CLIENT_SECRET,
+                "redirect_uri": req.redirect_uri,
+            }
+        )
+        data = response.json()
+        refresh_token = data.get("refresh_token")
+        if refresh_token:
+            logger.info("✅ Refresh token obtained successfully")
+            return {
+                "refresh_token": refresh_token,
+                "instructions": "Save this refresh_token as AUTH0_REFRESH_TOKEN in your Codespace secrets, then restart."
+            }
+        return {"error": "No refresh token received", "response": data}
+
+# ── Connected Accounts Flow ────────────────────────────────────────────────
+@app.post("/connect/github")
+async def connect_github(req: ConnectRequest):
+    """
+    Step 1: Initiate GitHub Connected Accounts flow via Token Vault.
+    Visit the returned connect_url in your browser to authorize GitHub access.
+    """
+    my_account_token = await get_my_account_token()
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://{AUTH0_DOMAIN}/me/v1/connected-accounts/connect",
+            headers={
+                "Authorization": f"Bearer {my_account_token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "connection": "github",
+                "redirect_uri": req.redirect_uri,
+                "state": str(uuid.uuid4()),
+                "scopes": ["repo", "read:user", "offline_access"],
+            }
+        )
+        data = response.json()
+        logger.info(f"Connected Accounts initiate response: {data}")
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=data)
+
+        ticket = data.get("connect_params", {}).get("ticket")
+        connect_uri = data.get("connect_uri")
+        auth_session = data.get("auth_session")
+
+        return {
+            "auth_session": auth_session,
+            "connect_url": f"{connect_uri}?ticket={ticket}",
+            "instructions": "1. Copy auth_session. 2. Open connect_url in browser. 3. Authorize GitHub. 4. Copy connect_code from callback. 5. POST to /connect/complete"
+        }
+
+@app.post("/connect/complete")
+async def connect_complete(req: CompleteRequest):
+    """
+    Step 2: Complete GitHub Connected Accounts flow.
+    Use the auth_session from /connect/github and the connect_code from the callback URL.
+    """
+    my_account_token = await get_my_account_token()
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://{AUTH0_DOMAIN}/me/v1/connected-accounts/complete",
+            headers={
+                "Authorization": f"Bearer {my_account_token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "auth_session": req.auth_session,
+                "connect_code": req.connect_code,
+                "redirect_uri": req.redirect_uri,
+            }
+        )
+        data = response.json()
+        logger.info(f"Connected Accounts complete response: {data}")
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=data)
+
+        log_audit_event("GITHUB_CONNECTED", f"GitHub account connected to Token Vault")
+        return {
+            "status": "success",
+            "message": "GitHub account successfully connected to Token Vault!",
+            "account": data,
+        }
+
+@app.get("/connect/status")
+async def connect_status():
+    """Check which accounts are currently connected to Token Vault."""
+    my_account_token = await get_my_account_token()
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"https://{AUTH0_DOMAIN}/me/v1/connected-accounts/accounts",
+            headers={"Authorization": f"Bearer {my_account_token}"},
+        )
+        return response.json()
+
+# ── Core Endpoints ─────────────────────────────────────────────────────────
 @app.post("/act")
 async def act_endpoint(req: ActRequest, background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
