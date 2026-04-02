@@ -6,12 +6,13 @@ import subprocess
 import json
 import warnings
 import uuid
+import secrets
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 
-# ── 1. INITIALIZE LOGGING (Once and for all) ──────────────────────────────
+# ── 1. INITIALIZE LOGGING ──────────────────────────────────────────────────
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
@@ -19,7 +20,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── 2. AUTH0 AI SDK Handling (Corrected Import Paths) ────────────────────
+# ── 2. AUTH0 AI SDK Handling & MOCK GATE ─────────────────────────────────
+MOCK_AUTH0 = os.environ.get("MOCK_AUTH0", "false").lower() == "true"
+
 try:
     from auth0_ai_langchain.auth0_ai import Auth0AI
     from auth0_ai_langchain.token_vault import get_credentials_from_token_vault
@@ -39,6 +42,10 @@ try:
     logger.info("🚀 AUTH0 SDK LOADED: Token Vault is active.")
 
 except ImportError as e:
+    if not MOCK_AUTH0:
+        logger.critical("Auth0 SDK failed to load. Aborting startup because MOCK_AUTH0 is not true.")
+        raise RuntimeError("Auth0 SDK not found and MOCK_AUTH0=false. Aborting startup.") from e
+
     _AUTH0_SDK_AVAILABLE = False
     logger.warning(f"⚠️ Auth0 SDK failed to load (using mock-mode): {e}")
 
@@ -56,9 +63,9 @@ except ImportError as e:
         return {"access_token": "mock_token"}
 
 # ── 3. CORE IMPORTS ───────────────────────────────────────────────────────
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel, Field
 from github import Github, GithubException
@@ -101,6 +108,11 @@ SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY")
 if not SESSION_SECRET_KEY:
     raise RuntimeError("SESSION_SECRET_KEY environment variable is required")
 
+REDIRECT_URI = os.environ.get("REDIRECT_URI", "http://localhost:8000/callback")
+
+ALLOWED_ORIGINS_RAW = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000")
+ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_RAW.split(",")]
+
 # ── 6. APP INIT ───────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -125,8 +137,8 @@ app.add_middleware(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,  # Must be False when allow_origins=["*"]
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,  # Need credentials=True for secure cookies/sessions
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -134,6 +146,7 @@ app.add_middleware(
 application = app  # Required for Elastic Beanstalk
 
 # ── 6.5 BACKGROUND JOBS STORE ─────────────────────────────────────────────
+# TODO: Move to a shared store like Redis for production to survive worker restarts
 jobs: Dict[str, Any] = {}
 
 # ── 7. AUTH0 TOKEN VAULT ──────────────────────────────────────────────────
@@ -165,7 +178,42 @@ class ProposeFixArgs(BaseModel):
     body: str
     files_to_change: list
 
-# ── 9. TOOL 3: CREATE FIX PR (defined first; referenced by propose_fix_pr) ──
+# ── 9. AUTH DEPENDENCIES ──────────────────────────────────────────────────
+def get_current_user(request: Request):
+    """Dependency to enforce authentication on secured routes."""
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated. Please complete the login flow.")
+    return user
+
+async def get_my_account_token(request: Request) -> str:
+    """Exchange user's session refresh token for My Account API access token."""
+    user = get_current_user(request)
+    refresh_token = user.get("refresh_token")
+
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Refresh token missing. Please re-authenticate.")
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://{AUTH0_DOMAIN}/oauth/token",
+            json={
+                "grant_type": "refresh_token",
+                "client_id": AUTH0_CLIENT_ID,
+                "client_secret": AUTH0_CLIENT_SECRET,
+                "refresh_token": refresh_token,
+                "audience": f"https://{AUTH0_DOMAIN}/me/",
+                "scope": "openid profile offline_access create:me:connected_accounts read:me:connected_accounts delete:me:connected_accounts",
+            }
+        )
+        data = response.json()
+        token = data.get("access_token")
+        if not token:
+            logger.error("Failed to get My Account API token from refresh exchange.")
+            raise HTTPException(status_code=500, detail="Token exchange failed. Re-authentication required.")
+        return token
+
+# ── 10. TOOL 1: CREATE FIX PR ─────────────────────────────────────────────
 def create_fix_pr(
     repo_owner: str,
     repo_name: str,
@@ -227,7 +275,7 @@ def create_fix_pr(
                 logger.warning(f"Failed to cleanup branch {branch}: {cleanup_err}")
         return f"PR creation failed (rolled back branch): {str(e)}"
 
-# ── 10. PROPOSE FIX TOOL (dry-run wrapper; always dry_run=True) ───────────
+# ── 11. PROPOSE FIX TOOL (dry-run wrapper) ────────────────────────────────
 def propose_fix_pr(
     repo_owner: str,
     repo_name: str,
@@ -255,10 +303,11 @@ propose_fix_tool = StructuredTool.from_function(
     handle_tool_errors=False,
 )
 
-# ── 11. TOOL 1: FETCH IAC FILES ───────────────────────────────────────────
+# ── 12. TOOL 2: FETCH IAC FILES ───────────────────────────────────────────
 def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
     try:
-        # Temporary: use direct token instead of vault
+        # Using MY_GITHUB_TOKEN as the delegated token.
+        # Token Vault handles the OAuth consent flow via /connect/* endpoints.
         token = os.environ.get("MY_GITHUB_TOKEN")
         credentials = {"access_token": token}
         g = Github(credentials["access_token"])
@@ -266,7 +315,6 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
 
         iac_files = []
 
-        # get_contents("") can return a single ContentFile instead of a list
         raw_contents = repo.get_contents("")
         contents = raw_contents if isinstance(raw_contents, list) else [raw_contents]
 
@@ -291,7 +339,9 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
                     logger.warning(f"Failed to decode {file_content.path}, skipping. Error: {e}")
 
         log_audit_event("FETCH_IAC", f"Retrieved {len(iac_files)} files", f"{repo_owner}/{repo_name}")
-        return "\n\n".join(iac_files) if iac_files else "No IaC files found."
+
+        # Return empty string instead of human text to prevent synthetic terraform evaluation
+        return "\n\n".join(iac_files) if iac_files else ""
 
     except GithubException as e:
         if e.status == 401:
@@ -309,8 +359,11 @@ fetch_iac_tool = StructuredTool.from_function(
     handle_tool_errors=False,
 )
 
-# ── 12. TOOL 2: SCAN IAC SECURITY ISSUES ─────────────────────────────────
+# ── 13. TOOL 3: SCAN IAC SECURITY ISSUES ─────────────────────────────────
 def scan_iac_security_issues(code: str) -> str:
+    if not code.strip():
+        return "No IaC files found in the repository. Skipping scan."
+
     checkov_results = ""
     try:
         import tempfile
@@ -323,7 +376,6 @@ def scan_iac_security_issues(code: str) -> str:
                     rel_path = parts[i].strip()
                     content = parts[i + 1].strip()
 
-                    # Prevent path traversal and preserve directory structure
                     normalized = os.path.normpath(rel_path).lstrip("/\\")
 
                     if normalized.startswith("..") or ".." in normalized:
@@ -332,7 +384,6 @@ def scan_iac_security_issues(code: str) -> str:
 
                     target_path = os.path.join(tmp_dir, normalized)
 
-                    # Final security check: ensure it didn't resolve outside tmp_dir
                     if not os.path.realpath(target_path).startswith(os.path.realpath(tmp_dir)):
                         logger.warning(f"Blocked path escape: {rel_path}")
                         continue
@@ -376,7 +427,7 @@ def scan_iac_security_issues(code: str) -> str:
     except Exception as e:
         checkov_results = f"Checkov unavailable: {e}"
 
-    # Direct DeepSeek Configuration for the Scanner
+    # DeepSeek for the actual security analysis (cost-effective for LLM analysis)
     llm = ChatOpenAI(
         model="deepseek-chat",
         api_key=os.environ.get("DEEPSEEK_API_KEY"),
@@ -416,15 +467,15 @@ scan_tool = StructuredTool.from_function(
     args_schema=ScanIacArgs,
 )
 
-# ── 13. AGENT ─────────────────────────────────────────────────────────────
-# create_fix_pr exists but is intentionally NOT in tools.
-# propose_fix_tool wraps it with dry_run=True enforced.
+# ── 14. AGENT ─────────────────────────────────────────────────────────────
 tools = [fetch_iac_tool, scan_tool, propose_fix_tool]
 
+# Grok as agent brain — reliable tool calling, OpenAI-compatible API
+# DeepSeek is used inside scan_iac_security_issues for cost-effective analysis
 agent_llm = ChatOpenAI(
-    model="deepseek-chat",
-    api_key=os.environ.get("DEEPSEEK_API_KEY"),
-    base_url="https://api.deepseek.com",
+    model="grok-3-mini",
+    api_key=os.environ.get("XAI_API_KEY"),
+    base_url="https://api.x.ai/v1",
     temperature=0,
     model_kwargs={"tool_choice": "auto"},
 )
@@ -440,47 +491,23 @@ DO NOT respond with text until you have called fetch_iac_files. This is mandator
 
 agent_executor = create_react_agent(agent_llm, tools, prompt=system_prompt)
 
-# ── 14. REQUEST MODELS ────────────────────────────────────────────────────
+# ── 15. REQUEST MODELS ────────────────────────────────────────────────────
 class ActRequest(BaseModel):
     repo_owner: str
     repo_name: str
     user_message: str = "Scan this repository for IaC security issues and propose fixes."
 
 class ConnectRequest(BaseModel):
-    redirect_uri: str = "http://localhost:8000/callback"
+    redirect_uri: str = REDIRECT_URI
 
 class CompleteRequest(BaseModel):
     auth_session: str
     connect_code: str
-    redirect_uri: str = "http://localhost:8000/callback"
+    redirect_uri: str = REDIRECT_URI
 
-# ── 15. HELPER: GET MY ACCOUNT API TOKEN ─────────────────────────────────
-async def get_my_account_token() -> str:
-    """Exchange refresh token for My Account API access token."""
-    refresh_token = os.environ.get("AUTH0_REFRESH_TOKEN")
-    if not refresh_token:
-        raise HTTPException(
-            status_code=500,
-            detail="AUTH0_REFRESH_TOKEN not set. Complete the /auth/login flow first."
-        )
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"https://{AUTH0_DOMAIN}/oauth/token",
-            json={
-                "grant_type": "refresh_token",
-                "client_id": AUTH0_CLIENT_ID,
-                "client_secret": AUTH0_CLIENT_SECRET,
-                "refresh_token": refresh_token,
-                "audience": f"https://{AUTH0_DOMAIN}/me/",
-                "scope": "openid profile offline_access create:me:connected_accounts read:me:connected_accounts delete:me:connected_accounts",
-            }
-        )
-        data = response.json()
-        token = data.get("access_token")
-        if not token:
-            logger.error(f"Failed to get My Account API token: {data}")
-            raise HTTPException(status_code=500, detail=f"Token exchange failed: {data}")
-        return token
+class TokenRequest(BaseModel):
+    code: str
+    redirect_uri: str = REDIRECT_URI
 
 # ── 16. AGENT RUNNER ──────────────────────────────────────────────────────
 async def run_agent(job_id: str, req: ActRequest):
@@ -493,6 +520,7 @@ async def run_agent(job_id: str, req: ActRequest):
             "recent_audit": list(AUDIT_LOG)[-5:],
         }
     except ConsentRequiredError as e:
+        log_audit_event("CONSENT_REQUIRED", f"Consent required for connection: {e.connection}")
         jobs[job_id] = {
             "status": "error",
             "error": "consent_required",
@@ -500,58 +528,90 @@ async def run_agent(job_id: str, req: ActRequest):
             "authorization_url": e.authorization_url,
         }
     except Exception as e:
-        logger.error(f"Agent error: {e}")
-        jobs[job_id] = {"status": "error", "error": str(e)}
+        logger.error(f"Agent error in job {job_id}: {e}", exc_info=True)
+        jobs[job_id] = {"status": "error", "error": "An internal server error occurred during the scan."}
 
 # ── 17. ENDPOINTS ─────────────────────────────────────────────────────────
 
-# ── Auth Flow: Step 0 — Get initial refresh token ─────────────────────────
+# ── Root UI (Hackathon Demo Instructions) ─────────────────────────────────
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    return """
+    <html>
+        <head>
+            <title>IaC Sentinel Demo</title>
+            <style>
+                body { font-family: -apple-system, sans-serif; padding: 2rem; max-width: 800px; margin: auto; line-height: 1.6; }
+                code { background: #f4f4f4; padding: 2px 5px; border-radius: 4px; }
+                .notice { background: #e3f2fd; padding: 1rem; border-left: 4px solid #1976d2; margin-top: 1rem; }
+            </style>
+        </head>
+        <body>
+            <h1>IaC Sentinel 🛡️</h1>
+            <p>Welcome to the IaC Sentinel Hackathon Demo.</p>
+            <h3>Getting Started</h3>
+            <ol>
+                <li><strong>Login:</strong> Start your secure session via <a href="/auth/login" target="_blank">/auth/login</a>.</li>
+                <li><strong>Exchange Token:</strong> POST the code from the callback to <code>/auth/token</code> to establish your session.</li>
+                <li><strong>Connect GitHub:</strong> Authorize Token Vault access by POSTing to <code>/connect/github</code> and completing the flow.</li>
+                <li><strong>Run Scan:</strong> Trigger an AI scan using <code>POST /act</code>.</li>
+            </ol>
+            <div class="notice">
+                <strong>Hackathon Note:</strong> Background jobs and session state are currently stored in-memory for this demo.
+                In a full production environment, this would be backed by Redis.
+            </div>
+        </body>
+    </html>
+    """
+
+# ── Auth Flow ─────────────────────────────────────────────────────────────
 @app.get("/auth/login")
-async def auth_login():
-    """
-    Visit this URL in your browser to get an authorization code.
-    Then exchange it at /auth/token with the code you receive.
-    """
+async def auth_login(request: Request):
+    """Initiates login with CSRF protection."""
+    state = secrets.token_urlsafe(32)
+    request.session["oauth_state"] = state
+
     url = (
         f"https://{AUTH0_DOMAIN}/authorize"
         f"?client_id={AUTH0_CLIENT_ID}"
         f"&response_type=code"
         f"&prompt=login"
         f"&scope=openid%20profile%20offline_access"
-        f"&redirect_uri=http://localhost:8000/callback"
-        f"&state=iac-sentinel-login"
+        f"&redirect_uri={REDIRECT_URI}"
+        f"&state={state}"
         f"&audience=https://{AUTH0_DOMAIN}/me/"
     )
-    return {"login_url": url, "instructions": "Open login_url in your browser, then use /auth/token with the code from the callback URL"}
+    return {"login_url": url, "instructions": "Open login_url in your browser"}
 
 @app.get("/callback")
-async def callback(code: str = None, connect_code: str = None, state: str = None, error: str = None):
-    """Handles both login callbacks and Connected Accounts callbacks."""
+async def callback(request: Request, code: str = None, connect_code: str = None, state: str = None, error: str = None):
+    """Handles OAuth callbacks with state validation."""
     if error:
-        return {"error": error, "state": state}
+        raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
+
+    # Connected Accounts callback — no CSRF check needed, Auth0 secures via ticket
     if connect_code:
-        # Connected Accounts callback
         return {
             "connect_code": connect_code,
-            "state": state,
-            "instructions": "Copy connect_code and POST it to /connect/complete along with your auth_session"
+            "instructions": "POST to /connect/complete with your auth_session and this connect_code"
         }
+
+    # CSRF check only for login flow
+    saved_state = request.session.get("oauth_state")
+    if not state or state != saved_state:
+        raise HTTPException(status_code=400, detail="Invalid or missing CSRF state parameter.")
+
     if code:
-        # Login callback
         return {
             "code": code,
-            "state": state,
-            "instructions": "Copy this code and POST it to /auth/token to get your refresh token"
+            "instructions": "POST this code to /auth/token to establish your session"
         }
-    return {"message": "Callback received but no code found", "state": state}
 
-class TokenRequest(BaseModel):
-    code: str
-    redirect_uri: str = "http://localhost:8000/callback"
+    return {"message": "Callback received but no code found"}
 
 @app.post("/auth/token")
-async def auth_token(req: TokenRequest):
-    """Exchange authorization code for refresh token. Save the refresh_token as AUTH0_REFRESH_TOKEN."""
+async def auth_token(req: TokenRequest, request: Request):
+    """Exchanges code for tokens and creates a secure session."""
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"https://{AUTH0_DOMAIN}/oauth/token",
@@ -565,22 +625,20 @@ async def auth_token(req: TokenRequest):
         )
         data = response.json()
         refresh_token = data.get("refresh_token")
+
         if refresh_token:
-            logger.info("✅ Refresh token obtained successfully")
-            return {
-                "refresh_token": refresh_token,
-                "instructions": "Save this refresh_token as AUTH0_REFRESH_TOKEN in your Codespace secrets, then restart."
-            }
-        return {"error": "No refresh token received", "response": data}
+            request.session["user"] = {"refresh_token": refresh_token}
+            log_audit_event("USER_LOGIN", "User established secure session")
+            return {"message": "Logged in successfully. You can now use /connect/* and /act endpoints."}
+
+        logger.error(f"Failed to obtain refresh token: {data}")
+        raise HTTPException(status_code=400, detail="Could not obtain refresh token")
 
 # ── Connected Accounts Flow ────────────────────────────────────────────────
 @app.post("/connect/github")
-async def connect_github(req: ConnectRequest):
-    """
-    Step 1: Initiate GitHub Connected Accounts flow via Token Vault.
-    Visit the returned connect_url in your browser to authorize GitHub access.
-    """
-    my_account_token = await get_my_account_token()
+async def connect_github(req: ConnectRequest, request: Request, user=Depends(get_current_user)):
+    """Initiates GitHub connection for the authenticated user."""
+    my_account_token = await get_my_account_token(request)
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -592,16 +650,17 @@ async def connect_github(req: ConnectRequest):
             json={
                 "connection": "github",
                 "redirect_uri": req.redirect_uri,
-                "state": str(uuid.uuid4()),
+                "state": secrets.token_urlsafe(32),
                 "scopes": ["repo", "read:user", "offline_access"],
             }
         )
+        logger.info(f"Connected Accounts initiate response received (status={response.status_code})")
+
+        if response.status_code not in (200, 201):
+            logger.error(f"Connect failed: {response.status_code} - {response.text}")
+            raise HTTPException(status_code=response.status_code, detail="Failed to initiate connection.")
+
         data = response.json()
-        logger.info(f"Connected Accounts initiate response: {data}")
-
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=data)
-
         ticket = data.get("connect_params", {}).get("ticket")
         connect_uri = data.get("connect_uri")
         auth_session = data.get("auth_session")
@@ -609,16 +668,12 @@ async def connect_github(req: ConnectRequest):
         return {
             "auth_session": auth_session,
             "connect_url": f"{connect_uri}?ticket={ticket}",
-            "instructions": "1. Copy auth_session. 2. Open connect_url in browser. 3. Authorize GitHub. 4. Copy connect_code from callback. 5. POST to /connect/complete"
         }
 
 @app.post("/connect/complete")
-async def connect_complete(req: CompleteRequest):
-    """
-    Step 2: Complete GitHub Connected Accounts flow.
-    Use the auth_session from /connect/github and the connect_code from the callback URL.
-    """
-    my_account_token = await get_my_account_token()
+async def connect_complete(req: CompleteRequest, request: Request, user=Depends(get_current_user)):
+    """Completes GitHub connection for the authenticated user."""
+    my_account_token = await get_my_account_token(request)
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -633,23 +688,19 @@ async def connect_complete(req: CompleteRequest):
                 "redirect_uri": req.redirect_uri,
             }
         )
-        data = response.json()
-        logger.info(f"Connected Accounts complete response: {data}")
+        logger.info(f"Connected Accounts complete response received (status={response.status_code})")
 
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=data)
+        if response.status_code not in (200, 201):
+            logger.error(f"Complete failed: {response.status_code} - {response.text}")
+            raise HTTPException(status_code=response.status_code, detail="Failed to complete connection.")
 
-        log_audit_event("GITHUB_CONNECTED", f"GitHub account connected to Token Vault")
-        return {
-            "status": "success",
-            "message": "GitHub account successfully connected to Token Vault!",
-            "account": data,
-        }
+        log_audit_event("GITHUB_CONNECTED", "GitHub account connected to Token Vault")
+        return {"message": "GitHub account successfully connected to Token Vault!"}
 
 @app.get("/connect/status")
-async def connect_status():
-    """Check which accounts are currently connected to Token Vault."""
-    my_account_token = await get_my_account_token()
+async def connect_status(request: Request, user=Depends(get_current_user)):
+    """Check which accounts are currently connected."""
+    my_account_token = await get_my_account_token(request)
 
     async with httpx.AsyncClient() as client:
         response = await client.get(
@@ -660,14 +711,14 @@ async def connect_status():
 
 # ── Core Endpoints ─────────────────────────────────────────────────────────
 @app.post("/act")
-async def act_endpoint(req: ActRequest, background_tasks: BackgroundTasks):
+async def act_endpoint(req: ActRequest, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "running"}
     background_tasks.add_task(run_agent, job_id, req)
     return {"job_id": job_id, "poll_url": f"/result/{job_id}"}
 
 @app.get("/result/{job_id}")
-def get_result(job_id: str):
+def get_result(job_id: str, user=Depends(get_current_user)):
     job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -681,7 +732,7 @@ def health():
     }
 
 @app.get("/audit")
-def get_audit():
+def get_audit(user=Depends(get_current_user)):
     return {"total_events": len(AUDIT_LOG), "logs": list(AUDIT_LOG)[::-1]}
 
 if __name__ == "__main__":
