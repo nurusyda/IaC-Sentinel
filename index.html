@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IaC Sentinel — AI Security Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0e13;
+    --surface:   #111820;
+    --surface2:  #18212c;
+    --surface3:  #1e2a38;
+    --border:    #243040;
+    --border2:   #2e3d50;
+    --green:     #00d4a0;
+    --green-dim: #00d4a015;
+    --green-mid: #00d4a030;
+    --red:       #ff5f6d;
+    --red-dim:   #ff5f6d15;
+    --amber:     #ffb347;
+    --amber-dim: #ffb34715;
+    --blue:      #4da6ff;
+    --blue-dim:  #4da6ff15;
+    --purple:    #b06dff;
+    --text:      #dde8f0;
+    --text2:     #8099b0;
+    --text3:     #4a6070;
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'IBM Plex Sans', sans-serif;
+    --radius:    10px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Subtle noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9998;
+    opacity: 0.4;
+  }
+
+  /* Radial glow at top */
+  body::after {
+    content: '';
+    position: fixed;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 400px;
+    background: radial-gradient(ellipse, rgba(0,212,160,0.06) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page { max-width: 860px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; position: relative; z-index: 1; }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .brand { display: flex; flex-direction: column; gap: 0.3rem; }
+
+  .brand-name {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--sans);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .brand-icon {
+    width: 2rem;
+    height: 2rem;
+    background: linear-gradient(135deg, var(--green), #00a87a);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+    box-shadow: 0 0 20px rgba(0,212,160,0.25);
+  }
+
+  .brand-sub {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text3);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding-left: 2.6rem;
+  }
+
+  .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; }
+
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--text2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 0.3rem 0.7rem;
+    border-radius: 100px;
+    letter-spacing: 0.04em;
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text3);
+    flex-shrink: 0;
+  }
+
+  .status-dot.live {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  .auth-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--sans);
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--green);
+    background: var(--green-dim);
+    border: 1px solid var(--green-mid);
+    padding: 0.3rem 0.8rem;
+    border-radius: 100px;
+  }
+
+  /* ── STEP TRACK ── */
+  .step-track {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin-bottom: 2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .step-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1rem;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    font-size: 0.72rem;
+    color: var(--text3);
+    font-family: var(--mono);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: all 0.25s;
+  }
+
+  .step-item:last-child { border-right: none; }
+
+  .step-item.active {
+    background: var(--green-dim);
+    color: var(--green);
+    border-bottom: 2px solid var(--green);
+  }
+
+  .step-item.done { color: var(--green); opacity: 0.6; }
+
+  .step-n {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    flex-shrink: 0;
+    font-weight: 600;
+  }
+
+  .step-item.done .step-n {
+    background: var(--green);
+    border-color: var(--green);
+    color: var(--bg);
+  }
+
+  /* ── CARD ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    overflow: hidden;
+    transition: border-color 0.25s;
+  }
+
+  .card.locked { opacity: 0.45; pointer-events: none; }
+  .card.active { border-color: var(--green); }
+
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 1.4rem;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .card-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--sans);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.01em;
+  }
+
+  .card-title-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border2);
+    flex-shrink: 0;
+  }
+
+  .card.active .card-title-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  .card-body { padding: 1.4rem; }
+
+  .card-desc {
+    font-size: 0.875rem;
+    color: var(--text2);
+    line-height: 1.7;
+    margin-bottom: 1.25rem;
+  }
+
+  /* ── TAGS ── */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .tag-green { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-mid); }
+  .tag-amber { background: var(--amber-dim); color: var(--amber); }
+  .tag-blue  { background: var(--blue-dim);  color: var(--blue);  }
+  .tag-purple{ background: rgba(176,109,255,0.1); color: var(--purple); }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 1.2rem;
+    border-radius: 7px;
+    font-family: var(--sans);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    outline: none;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: var(--green);
+    color: #051a14;
+  }
+
+  .btn-primary:hover {
+    background: #00edb0;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(0,212,160,0.3);
+  }
+
+  .btn-primary:disabled {
+    background: var(--surface3);
+    color: var(--text3);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--text2);
+    border: 1px solid var(--border2);
+  }
+
+  .btn-outline:hover { border-color: var(--text2); color: var(--text); }
+
+  .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.75rem; }
+
+  /* ── INPUTS ── */
+  .field { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+
+  .field-label {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text3);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .input {
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: 7px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    padding: 0.6rem 0.9rem;
+    outline: none;
+    transition: border-color 0.18s, box-shadow 0.18s;
+    width: 100%;
+  }
+
+  .input:focus {
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px rgba(0,212,160,0.1);
+  }
+
+  .input::placeholder { color: var(--text3); }
+
+  .field-row { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; }
+
+  /* ── CONNECT URL BOX ── */
+  .connect-box {
+    display: none;
+    background: var(--bg);
+    border: 1px solid var(--amber);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    margin-top: 1.25rem;
+  }
+
+  .connect-box.show { display: block; animation: fadeSlide 0.25s ease; }
+
+  @keyframes fadeSlide { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+
+  .connect-box-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--amber);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+  }
+
+  .connect-url {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--blue);
+    word-break: break-all;
+    line-height: 1.5;
+    text-decoration: none;
+    display: block;
+    margin-bottom: 1rem;
+  }
+
+  .connect-url:hover { text-decoration: underline; }
+
+  /* ── TERMINAL ── */
+  .terminal {
+    background: #060a0d;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.8;
+    max-height: 260px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border2) transparent;
+    margin-top: 1rem;
+  }
+
+  .terminal::-webkit-scrollbar { width: 3px; }
+  .terminal::-webkit-scrollbar-thumb { background: var(--border2); }
+
+  .t-line { display: flex; gap: 0.6rem; animation: tFade 0.2s ease; }
+  @keyframes tFade { from{opacity:0;transform:translateY(2px)} to{opacity:1;transform:translateY(0)} }
+  .t-prompt { color: var(--green); flex-shrink: 0; user-select: none; }
+  .t-text  { color: var(--text2); }
+  .t-ok    { color: var(--green); }
+  .t-warn  { color: var(--amber); }
+  .t-err   { color: var(--red); }
+  .t-info  { color: var(--blue); }
+
+  /* ── RESULTS ── */
+  .result-prose {
+    font-family: var(--sans);
+    font-size: 0.9rem;
+    line-height: 1.8;
+    color: var(--text2);
+  }
+
+  .result-prose strong { color: var(--text); font-weight: 600; }
+
+  .result-prose pre {
+    background: #060a0d;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.1rem 1.25rem;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.7;
+    color: var(--green);
+    margin: 0.75rem 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border2) transparent;
+  }
+
+  .result-prose pre::-webkit-scrollbar { height: 4px; }
+  .result-prose pre::-webkit-scrollbar-thumb { background: var(--border2); }
+
+  .sev-high   { color: var(--red);    font-weight: 700; font-family: var(--mono); font-size: 0.78rem; }
+  .sev-medium { color: var(--amber);  font-weight: 700; font-family: var(--mono); font-size: 0.78rem; }
+  .sev-low    { color: var(--blue);   font-weight: 700; font-family: var(--mono); font-size: 0.78rem; }
+
+  .section-head {
+    font-family: var(--sans);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 1.25rem 0 0.5rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── NEXT STEPS BANNER ── */
+  .next-steps {
+    background: linear-gradient(135deg, var(--green-dim), transparent);
+    border: 1px solid var(--green-mid);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.4rem;
+    margin-top: 1.5rem;
+  }
+
+  .next-steps-title {
+    font-family: var(--sans);
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--green);
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .next-step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.84rem;
+    color: var(--text2);
+  }
+
+  .next-step-item:last-child { border-bottom: none; }
+
+  .next-step-num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--green-mid);
+    color: var(--green);
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+
+  /* ── AUDIT TRAIL ── */
+  .audit-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    animation: fadeSlide 0.25s ease;
+  }
+
+  .audit-row:last-child { border-bottom: none; }
+  .audit-time { font-family: var(--mono); font-size: 0.68rem; color: var(--text3); flex-shrink: 0; }
+
+  .audit-badge {
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    flex-shrink: 0;
+  }
+
+  .audit-badge.FETCH_IAC       { background: var(--blue-dim);   color: var(--blue); }
+  .audit-badge.AI_SCAN         { background: var(--amber-dim);  color: var(--amber); }
+  .audit-badge.DRY_RUN_PR      { background: var(--green-dim);  color: var(--green); }
+  .audit-badge.GITHUB_CONNECTED{ background: var(--green-dim);  color: var(--green); }
+  .audit-badge.USER_LOGIN      { background: var(--surface3);   color: var(--text2); }
+  .audit-badge.USER_LOGOUT     { background: var(--surface3);   color: var(--text2); }
+
+  .audit-detail { color: var(--text2); flex: 1; }
+  .audit-target { font-family: var(--mono); font-size: 0.68rem; color: var(--text3); }
+
+  /* ── DIVIDER ── */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text3);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .divider::before, .divider::after { content:''; flex:1; height:1px; background: var(--border); }
+
+  /* ── SPINNER ── */
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border2);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── SCAN STATUS LINE ── */
+  .scan-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.82rem;
+    color: var(--text2);
+    margin-bottom: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    background: var(--surface2);
+    border-radius: 7px;
+    border: 1px solid var(--border);
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.72rem;
+    color: var(--text3);
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.82rem;
+    color: var(--text);
+    z-index: 10000;
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.25s ease;
+    max-width: 300px;
+    font-family: var(--sans);
+  }
+
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.ok   { border-color: var(--green); color: var(--green); }
+  .toast.err  { border-color: var(--red);   color: var(--red); }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 580px) {
+    .step-track { grid-template-columns: repeat(2, 1fr); }
+    .step-item:nth-child(2) { border-right: none; }
+    .step-item:nth-child(3) { border-top: 1px solid var(--border); }
+    .header { flex-direction: column; }
+    .header-right { align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-name">
+        <div class="brand-icon">🛡</div>
+        IaC Sentinel
+      </div>
+      <div class="brand-sub">Auth0 Token Vault · AI Security Scanner</div>
+    </div>
+    <div class="header-right">
+      <div class="status-pill">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">connecting...</span>
+      </div>
+      <div id="userBadge" style="display:none" class="auth-badge">
+        <span>✓</span>
+        <span>authenticated</span>
+        <button onclick="logout()" class="btn btn-outline btn-sm" style="margin-left:0.25rem">sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- STEP TRACK -->
+  <div class="step-track">
+    <div class="step-item active" id="step1"><div class="step-n">1</div>Login</div>
+    <div class="step-item" id="step2"><div class="step-n">2</div>Connect</div>
+    <div class="step-item" id="step3"><div class="step-n">3</div>Scan</div>
+    <div class="step-item" id="step4"><div class="step-n">4</div>Results</div>
+  </div>
+
+  <!-- CARD 1: AUTH -->
+  <div class="card active" id="cardAuth">
+    <div class="card-head">
+      <div class="card-title"><div class="card-title-dot"></div>Authentication</div>
+      <div style="display:flex;gap:0.4rem">
+        <span class="tag tag-green">Auth0</span>
+        <span class="tag tag-blue">OAuth 2.0</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <p class="card-desc">
+        Sign in with your Auth0 account to begin. IaC Sentinel uses <strong>Auth0 Token Vault</strong> to securely store and retrieve your GitHub credentials — the agent never handles your tokens directly.
+      </p>
+      <button class="btn btn-primary" onclick="startLogin()" id="loginBtn">
+        → Login with Auth0
+      </button>
+    </div>
+  </div>
+
+  <!-- CARD 2: CONNECT -->
+  <div class="card locked" id="cardConnect">
+    <div class="card-head">
+      <div class="card-title"><div class="card-title-dot"></div>Connect GitHub via Token Vault</div>
+      <span class="tag tag-amber">Token Vault</span>
+    </div>
+    <div class="card-body">
+      <p class="card-desc">
+        Connect your GitHub account through Auth0's Token Vault. Auth0 stores the token securely — IaC Sentinel exchanges it at runtime using the federated connection grant type, so your credentials never leave Auth0's custody.
+      </p>
+      <button class="btn btn-primary" onclick="connectGithub()" id="connectBtn">
+        → Connect GitHub
+      </button>
+
+      <div class="connect-box" id="connectBox">
+        <div class="connect-box-label">⚡ Authorization Required</div>
+        <a href="#" id="connectUrl" class="connect-url" target="_blank" rel="noopener">—</a>
+        <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+          <button class="btn btn-primary" onclick="openConnectUrl()">↗ Open Authorization Page</button>
+          <span style="font-size:0.78rem;color:var(--text3)">Opens GitHub OAuth in new tab</span>
+        </div>
+        <div>
+          <div class="field-label" style="margin-bottom:0.4rem">Paste connect_code after authorizing</div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+            <input type="text" class="input" id="connectCodeInput" placeholder="connect_code from callback..." style="flex:1;min-width:200px">
+            <button class="btn btn-primary" onclick="completeConnect()">Complete →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CARD 3: SCAN -->
+  <div class="card locked" id="cardScan">
+    <div class="card-head">
+      <div class="card-title"><div class="card-title-dot"></div>Scan Repository</div>
+      <div style="display:flex;gap:0.4rem">
+        <span class="tag tag-amber">Checkov</span>
+        <span class="tag tag-blue">DeepSeek</span>
+        <span class="tag tag-green">Grok</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <p class="card-desc">
+        Point IaC Sentinel at any GitHub repository. The AI agent will fetch your Terraform and CloudFormation files using your Token Vault credentials, run <strong>Checkov</strong> static analysis, then use <strong>DeepSeek</strong> to explain each finding and generate fix suggestions.
+      </p>
+      <div class="field-row" style="margin-bottom:1rem">
+        <div class="field">
+          <div class="field-label">Repository Owner</div>
+          <input type="text" class="input" id="repoOwner" placeholder="e.g. nurusyda" value="nurusyda">
+        </div>
+        <div class="field">
+          <div class="field-label">Repository Name</div>
+          <input type="text" class="input" id="repoName" placeholder="e.g. my-terraform-repo">
+        </div>
+        <button class="btn btn-primary" onclick="startScan()" id="scanBtn" style="align-self:flex-end;flex-shrink:0">
+          → Run Scan
+        </button>
+      </div>
+
+      <div id="scanProgress" style="display:none">
+        <div class="scan-status-bar">
+          <div class="spinner" id="scanSpinner"></div>
+          <span id="scanStatusText">Initializing...</span>
+        </div>
+        <div class="terminal" id="terminal"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CARD 4: RESULTS -->
+  <div class="card" id="cardResults" style="display:none">
+    <div class="card-head">
+      <div class="card-title"><div class="card-title-dot"></div>Scan Results</div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <span class="tag tag-green">complete</span>
+        <button class="btn btn-outline btn-sm" onclick="resetScan()">↺ New Scan</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="resultContent" class="result-prose"></div>
+
+      <!-- NEXT STEPS -->
+      <div class="next-steps" id="nextSteps" style="display:none">
+        <div class="next-steps-title">
+          <span>→</span> What you can do next
+        </div>
+        <div class="next-step-item">
+          <div class="next-step-num">1</div>
+          <div><strong style="color:var(--text)">Review the proposed fixes</strong> — the Terraform changes above are ready to copy into your repository.</div>
+        </div>
+        <div class="next-step-item">
+          <div class="next-step-num">2</div>
+          <div><strong style="color:var(--text)">Apply manually</strong> — copy the fixed code blocks and open a real PR on GitHub to remediate the issues.</div>
+        </div>
+        <div class="next-step-item">
+          <div class="next-step-num">3</div>
+          <div><strong style="color:var(--text)">Scan again</strong> — after applying fixes, run IaC Sentinel again to confirm all issues are resolved.</div>
+        </div>
+        <div class="next-step-item">
+          <div class="next-step-num">4</div>
+          <div><strong style="color:var(--text)">Scan other repos</strong> — click ↺ New Scan to check another repository in your organization.</div>
+        </div>
+      </div>
+
+      <div class="divider">Audit Trail</div>
+      <div id="auditLog"></div>
+    </div>
+  </div>
+
+  <footer>
+    <span>IaC Sentinel · Auth0 Token Vault Hackathon 2026</span>
+    <div style="display:flex;gap:0.5rem;align-items:center">
+      <span class="tag tag-green">Token Vault</span>
+      <span style="color:var(--text3)">Auth0 · Grok-3-mini · DeepSeek · Checkov</span>
+    </div>
+  </footer>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const S = { loggedIn: false, connectUrl: null, pollInterval: null };
+
+// ── UTILS ─────────────────────────────────────────────────────────────────
+function toast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast show ${type}`;
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.className = 'toast', 3500);
+}
+
+function setStep(n) {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`step${i}`);
+    el.classList.remove('active', 'done');
+    const num = el.querySelector('.step-n');
+    if (i < n) { el.classList.add('done'); num.textContent = '✓'; }
+    else { num.textContent = i; }
+    if (i === n) el.classList.add('active');
+  }
+}
+
+function unlock(id) {
+  const c = document.getElementById(id);
+  c.classList.remove('locked');
+  c.classList.add('active');
+}
+
+function term(text, cls = 't-text') {
+  const t = document.getElementById('terminal');
+  const d = document.createElement('div');
+  d.className = 't-line';
+  d.innerHTML = `<span class="t-prompt">$</span><span class="${cls}">${text}</span>`;
+  t.appendChild(d);
+  t.scrollTop = t.scrollHeight;
+}
+
+function renderMarkdown(text) {
+  // Code blocks FIRST — before any other replacements
+  text = text.replace(/```[\w]*\n([\s\S]*?)```/g, (_, code) =>
+    `<pre>${code.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`
+  );
+  // Inline code
+  text = text.replace(/`([^`]+)`/g, '<code style="font-family:var(--mono);font-size:0.82em;background:var(--surface3);padding:0.1em 0.35em;border-radius:4px;color:var(--green)">$1</code>');
+  // Severity badges
+  text = text.replace(/\[Severity:\s*High\]/gi,   '<span class="sev-high">[HIGH]</span>');
+  text = text.replace(/\[Severity:\s*Medium\]/gi, '<span class="sev-medium">[MEDIUM]</span>');
+  text = text.replace(/\[Severity:\s*Low\]/gi,    '<span class="sev-low">[LOW]</span>');
+  // Headers
+  text = text.replace(/^### (.+)$/gm, '<div class="section-head">$1</div>');
+  text = text.replace(/^## (.+)$/gm,  '<div class="section-head" style="font-size:1rem">$1</div>');
+  text = text.replace(/^# (.+)$/gm,   '<div class="section-head" style="font-size:1.1rem">$1</div>');
+  // Bold
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Bullets
+  text = text.replace(/^\s*[-•]\s+(.+)$/gm, '<div style="display:flex;gap:0.5rem;padding:0.15rem 0"><span style="color:var(--green);flex-shrink:0">›</span><span>$1</span></div>');
+  // Line breaks (not inside pre tags)
+  text = text.replace(/\n/g, '<br>');
+  return text;
+}
+
+// ── HEALTH ────────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    if (d.status === 'healthy') {
+      dot.classList.add('live');
+      txt.textContent = `online · token vault ${d.token_vault}`;
+    }
+  } catch {
+    document.getElementById('statusText').textContent = 'offline';
+  }
+}
+
+// ── AUTH ──────────────────────────────────────────────────────────────────
+async function startLogin() {
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Redirecting...';
+  try {
+    const r = await fetch('/auth/login', { credentials: 'include' });
+    const d = await r.json();
+    window.location.href = d.login_url;
+  } catch {
+    toast('Failed to initiate login', 'err');
+    btn.disabled = false;
+    btn.innerHTML = '→ Login with Auth0';
+  }
+}
+
+async function exchangeCode(code) {
+  const r = await fetch('/auth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+    credentials: 'include',
+  });
+  const d = await r.json();
+  if (r.ok) {
+    S.loggedIn = true;
+    setLoggedIn();
+    toast('Logged in successfully', 'ok');
+  } else {
+    toast(d.detail || 'Login failed', 'err');
+  }
+}
+
+function setLoggedIn() {
+  document.getElementById('userBadge').style.display = 'flex';
+  document.getElementById('cardAuth').classList.remove('active');
+  unlock('cardConnect');
+  setStep(2);
+}
+
+async function logout() {
+  await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+  localStorage.removeItem('iac_auth_session');
+  location.reload();
+}
+
+// ── CONNECT GITHUB ────────────────────────────────────────────────────────
+async function connectGithub() {
+  const btn = document.getElementById('connectBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Initiating...';
+  try {
+    const r = await fetch('/connect/github', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ redirect_uri: window.location.origin + '/callback' }),
+      credentials: 'include',
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Failed');
+
+    localStorage.setItem('iac_auth_session', d.auth_session);
+    S.connectUrl = d.connect_url;
+
+    const box = document.getElementById('connectBox');
+    const link = document.getElementById('connectUrl');
+    box.classList.add('show');
+    link.href = d.connect_url;
+    link.textContent = d.connect_url;
+
+    btn.innerHTML = '↺ Reconnect';
+    btn.disabled = false;
+    toast('Open the authorization URL to connect GitHub');
+  } catch (e) {
+    toast(e.message || 'Connection failed', 'err');
+    btn.disabled = false;
+    btn.innerHTML = '→ Connect GitHub';
+  }
+}
+
+function openConnectUrl() {
+  if (S.connectUrl) window.open(S.connectUrl, '_blank');
+}
+
+async function completeConnect(autoCode = null) {
+  const code = autoCode || document.getElementById('connectCodeInput').value.trim();
+  const session = localStorage.getItem('iac_auth_session');
+
+  if (!code)    { toast('Paste the connect_code first', 'err'); return; }
+  if (!session) { toast('No auth session — click Connect GitHub first', 'err'); return; }
+
+  const btn = document.querySelector('[onclick="completeConnect()"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>'; }
+
+  try {
+    const r = await fetch('/connect/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auth_session: session, connect_code: code, redirect_uri: window.location.origin + '/callback' }),
+      credentials: 'include',
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Failed to complete');
+
+    localStorage.removeItem('iac_auth_session');
+    document.getElementById('connectBox').classList.remove('show');
+    document.getElementById('cardConnect').classList.remove('active');
+    unlock('cardScan');
+    setStep(3);
+    toast('GitHub connected to Token Vault!', 'ok');
+  } catch (e) {
+    toast(e.message || 'Complete failed', 'err');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Complete →'; }
+  }
+}
+
+// ── SCAN ──────────────────────────────────────────────────────────────────
+async function startScan() {
+  const owner = document.getElementById('repoOwner').value.trim();
+  const name  = document.getElementById('repoName').value.trim();
+  if (!owner || !name) { toast('Enter repo owner and name', 'err'); return; }
+
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Scanning...';
+
+  document.getElementById('scanProgress').style.display = 'block';
+  document.getElementById('terminal').innerHTML = '';
+  document.getElementById('scanStatusText').textContent = 'Agent starting...';
+
+  term(`fetch_iac_files("${owner}", "${name}")`, 't-info');
+  term('Exchanging credentials via Token Vault...', 't-text');
+
+  try {
+    const r = await fetch('/act', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_owner: owner, repo_name: name }),
+      credentials: 'include',
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Failed to start');
+    pollResult(d.job_id);
+  } catch (e) {
+    term(`Error: ${e.message}`, 't-err');
+    btn.disabled = false;
+    btn.innerHTML = '→ Run Scan';
+    document.getElementById('scanStatusText').textContent = 'Failed';
+  }
+}
+
+const POLL_MSGS = [
+  ['✅ Token Vault exchange successful', 't-ok'],
+  ['GitHub files retrieved — parsing IaC...', 't-text'],
+  ['Running Checkov static analysis...', 't-warn'],
+  ['Checkov complete — found misconfigurations', 't-warn'],
+  ['DeepSeek analyzing each vulnerability...', 't-text'],
+  ['Generating remediation code...', 't-text'],
+  ['Building dry-run PR preview...', 't-ok'],
+];
+
+let pollCount = 0;
+
+async function pollResult(jobId) {
+  pollCount = 0;
+  clearInterval(S.pollInterval);
+  S.pollInterval = setInterval(async () => {
+    try {
+      const r = await fetch(`/result/${jobId}`, { credentials: 'include' });
+      const d = await r.json();
+
+      if (pollCount < POLL_MSGS.length) {
+        term(...POLL_MSGS[pollCount]);
+        document.getElementById('scanStatusText').textContent = POLL_MSGS[pollCount][0].replace('✅ ', '');
+        pollCount++;
+      }
+
+      if (d.status === 'done') {
+        clearInterval(S.pollInterval);
+        term('Scan complete ✓', 't-ok');
+        document.getElementById('scanSpinner').style.display = 'none';
+        document.getElementById('scanStatusText').textContent = 'Complete';
+        document.getElementById('scanBtn').disabled = false;
+        document.getElementById('scanBtn').innerHTML = '→ Run Scan';
+        showResults(d);
+      } else if (d.status === 'error') {
+        clearInterval(S.pollInterval);
+        term(`Error: ${d.error}`, 't-err');
+        if (d.instructions) term(d.instructions, 't-warn');
+        document.getElementById('scanBtn').disabled = false;
+        document.getElementById('scanBtn').innerHTML = '→ Run Scan';
+        document.getElementById('scanStatusText').textContent = 'Failed';
+      }
+    } catch { /* keep polling */ }
+  }, 3000);
+}
+
+function showResults(data) {
+  setStep(4);
+  const card = document.getElementById('cardResults');
+  card.style.display = 'block';
+  card.classList.add('active');
+
+  document.getElementById('resultContent').innerHTML = renderMarkdown(data.response);
+  document.getElementById('nextSteps').style.display = 'block';
+
+  const audit = document.getElementById('auditLog');
+  audit.innerHTML = '';
+  (data.recent_audit || []).forEach(ev => {
+    const time = new Date(ev.timestamp).toLocaleTimeString();
+    const row = document.createElement('div');
+    row.className = 'audit-row';
+    row.innerHTML = `
+      <span class="audit-time">${time}</span>
+      <span class="audit-badge ${ev.action}">${ev.action}</span>
+      <span class="audit-detail">${ev.details || '—'}</span>
+      <span class="audit-target">${ev.target !== 'Internal' ? ev.target : ''}</span>
+    `;
+    audit.appendChild(row);
+  });
+
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function resetScan() {
+  document.getElementById('cardResults').style.display = 'none';
+  document.getElementById('scanProgress').style.display = 'none';
+  document.getElementById('scanBtn').disabled = false;
+  document.getElementById('scanBtn').innerHTML = '→ Run Scan';
+  clearInterval(S.pollInterval);
+  setStep(3);
+}
+
+// ── CALLBACK ──────────────────────────────────────────────────────────────
+async function handleCallback() {
+  const p = new URLSearchParams(window.location.search);
+  const code = p.get('code');
+  const connectCode = p.get('connect_code');
+
+  if (code) {
+    window.history.replaceState({}, '', '/');
+    await exchangeCode(code);
+  } else if (connectCode) {
+    window.history.replaceState({}, '', '/');
+    const inp = document.getElementById('connectCodeInput');
+    if (inp) inp.value = connectCode;
+    S.loggedIn = true;
+    setLoggedIn();
+    document.getElementById('connectBox').classList.add('show');
+    toast('Completing GitHub connection...', 'ok');
+    await completeConnect(connectCode);
+  }
+}
+
+async function checkSession() {
+  try {
+    const r = await fetch('/audit', { credentials: 'include' });
+    if (r.ok) { S.loggedIn = true; setLoggedIn(); }
+  } catch { }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+(async () => {
+  await checkHealth();
+  await handleCallback();
+  if (!S.loggedIn) await checkSession();
+  if (localStorage.getItem('iac_auth_session') && S.loggedIn) {
+    document.getElementById('connectBox').classList.add('show');
+  }
+})();
+</script>
+</body>
+</html>
