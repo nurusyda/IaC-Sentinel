@@ -1,7 +1,9 @@
 # Core Web Framework
-fastapi>=0.115.0,<0.116.0
-uvicorn[standard]>=0.30.0,<0.31.0
-starlette>=0.41.0,<0.42.0
+# Pin fastapi tightly so it controls the Starlette transitive dep version.
+fastapi==0.115.5
+uvicorn[standard]>=0.30.0,<0.32.0
+# Starlette is pulled in by FastAPI — explicit pin keeps it in sync.
+starlette==0.41.3
 
 # Data validation
 pydantic>=2.9.0,<3.0.0
@@ -12,6 +14,7 @@ PyGithub>=2.5.0,<3.0.0
 # LangChain ecosystem
 langchain-core==0.3.83
 langgraph==0.5.4
+# langchain-openai 0.3.35 requires httpx>=0.28 — see httpx pin below.
 langchain-openai==0.3.35
 
 # Auth0 AI SDK
@@ -20,6 +23,8 @@ auth0-ai-langchain==1.0.1
 # Utilities
 python-dotenv>=1.0.0,<2.0.0
 checkov>=3.2.0,<4.0.0
-httpx>=0.27.0,<0.28.0
+# httpx >=0.28 required by langchain-openai 0.3.35.
+httpx>=0.28.0,<0.29.0
 tiktoken>=0.7.0,<0.8.0
 itsdangerous>=2.2.0,<3.0.0
+slowapi>=0.1.9
