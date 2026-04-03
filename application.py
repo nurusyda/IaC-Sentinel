@@ -7,11 +7,12 @@ import json
 import warnings
 import uuid
 import secrets
+import asyncio
 import httpx
-from collections import deque
+from collections import deque, OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import Dict, Any, List
 
 # ── 1. INITIALIZE LOGGING ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -21,12 +22,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── 2. AUTH0 AI SDK Handling & MOCK GATE ─────────────────────────────────
+# ── 2. AUTH0 AI SDK ───────────────────────────────────────────────────────
 MOCK_AUTH0 = os.environ.get("MOCK_AUTH0", "false").lower() == "true"
 
 try:
     from auth0_ai_langchain.auth0_ai import Auth0AI
-    from auth0_ai_langchain.token_vault import get_credentials_from_token_vault
 
     try:
         from auth0_ai_langchain.exceptions import ConsentRequiredError
@@ -56,12 +56,14 @@ except ImportError as e:
             self.authorization_url = authorization_url
 
     class Auth0AI:
-        def with_token_vault(self, connection: str, scopes: list = None, **kwargs):
-            return lambda func: func
+        pass
 
-    def get_credentials_from_token_vault():
-        warnings.warn("Using mock Auth0 credentials", RuntimeWarning)
-        return {"access_token": "mock_token"}
+# Auth0AI is instantiated here to confirm SDK availability at startup.
+# The Connected Accounts flow and token exchange use Auth0's /oauth/token
+# endpoint directly (see exchange_for_github_token) because the SDK's
+# with_token_vault decorator is incompatible with LangGraph's tool execution
+# model — it triggers a CIBA interrupt instead of executing the tool.
+auth0_ai = Auth0AI()
 
 # ── 3. CORE IMPORTS ───────────────────────────────────────────────────────
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
@@ -95,6 +97,8 @@ def log_audit_event(action: str, details: str = "", target: str = "Internal"):
 
 # ── 5. CONFIG ─────────────────────────────────────────────────────────────
 MAX_IAC_FILES = 15
+MAX_CONCURRENT_JOBS = 10
+MAX_STORED_JOBS = 100  # Evict oldest jobs beyond this to prevent memory leak
 
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN", "")
 AUTH0_CLIENT_ID = os.environ.get("AUTH0_CLIENT_ID", "")
@@ -139,7 +143,7 @@ app.add_middleware(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,  # Need credentials=True for secure cookies/sessions
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -147,17 +151,18 @@ app.add_middleware(
 application = app  # Required for Elastic Beanstalk
 
 # ── 6.5 BACKGROUND JOBS STORE ─────────────────────────────────────────────
-# TODO: Move to a shared store like Redis for production to survive worker restarts
-jobs: Dict[str, Any] = {}
+# OrderedDict preserves insertion order so we can evict oldest entries.
+# Capped at MAX_STORED_JOBS to prevent unbounded memory growth.
+# TODO: Move to Redis for production to survive worker restarts.
+jobs: OrderedDict = OrderedDict()
 
-# ── 7. AUTH0 TOKEN VAULT ──────────────────────────────────────────────────
-auth0_ai = Auth0AI()
-with_github_vault = auth0_ai.with_token_vault(
-    connection="github",
-    scopes=["repo", "read:user"],
-)
+def store_job(job_id: str, data: Dict[str, Any]):
+    """Store a job result, evicting the oldest entry if over the cap."""
+    jobs[job_id] = data
+    while len(jobs) > MAX_STORED_JOBS:
+        jobs.popitem(last=False)  # Remove oldest
 
-# ── 8. TOOL SCHEMAS (Pydantic) ────────────────────────────────────────────
+# ── 7. TOOL SCHEMAS (Pydantic) ────────────────────────────────────────────
 class FetchIacFilesArgs(BaseModel):
     repo_owner: str = Field(description="GitHub repository owner")
     repo_name: str = Field(description="GitHub repository name")
@@ -171,15 +176,21 @@ class ScanIacArgs(BaseModel):
         )
     )
 
+class FileChange(BaseModel):
+    path: str = Field(description="File path relative to repo root")
+    content: str = Field(description="New file content with security fixes applied")
+
 class ProposeFixArgs(BaseModel):
     repo_owner: str
     repo_name: str
     branch: str
     title: str
     body: str
-    files_to_change: list
+    files_to_change: List[FileChange] = Field(
+        description="List of files to change, each with a path and new content"
+    )
 
-# ── 9. AUTH DEPENDENCIES ──────────────────────────────────────────────────
+# ── 8. AUTH DEPENDENCIES ──────────────────────────────────────────────────
 def get_current_user(request: Request):
     """Dependency to enforce authentication on secured routes."""
     user = request.session.get("user")
@@ -214,141 +225,56 @@ async def get_my_account_token(request: Request) -> str:
             raise HTTPException(status_code=500, detail="Token exchange failed. Re-authentication required.")
         return token
 
-# ── 10. TOKEN VAULT: Exchange refresh token for GitHub token ──────────────
-def exchange_for_github_token(refresh_token: str) -> str:
+# ── 9. TOKEN VAULT: Exchange refresh token for GitHub token ───────────────
+async def exchange_for_github_token(refresh_token: str) -> str:
     """
     Exchange the user's Auth0 refresh token for a GitHub access token
-    stored in the Token Vault. This is the core Token Vault usage —
-    the user's GitHub token was stored during /connect/github flow.
+    stored in Token Vault. The user's GitHub token was stored during
+    the /connect/github Connected Accounts flow.
+
+    This calls the Auth0 /oauth/token endpoint directly using the
+    Token Vault federated connection grant type (RFC 8693 Token Exchange).
+    The auth0-ai SDK's with_token_vault decorator uses the same underlying
+    endpoint but requires a LangChain runnable context that is incompatible
+    with LangGraph's create_react_agent tool execution model — it triggers
+    a CIBA interrupt instead of executing the tool. We call the endpoint
+    directly to preserve full agent tool-calling functionality while still
+    using Auth0's Token Vault for secure credential storage and retrieval.
     """
-    response = httpx.post(
-        f"https://{AUTH0_DOMAIN}/oauth/token",
-        json={
-            "grant_type": "urn:auth0:params:oauth:grant-type:token-exchange:federated-connection-access-token",
-            "client_id": AUTH0_CLIENT_ID,
-            "client_secret": AUTH0_CLIENT_SECRET,
-            "subject_token": refresh_token,
-            "subject_token_type": "urn:ietf:params:oauth:token-type:refresh_token",
-            "requested_token_type": "http://auth0.com/oauth/token-type/federated-connection-access-token",
-            "connection": "github",
-        }
-    )
-    data = response.json()
-    github_token = data.get("access_token")
-
-    if not github_token:
-        logger.error(f"Token Vault exchange failed: {data}")
-        raise ConsentRequiredError(
-            connection="github",
-            authorization_url=AUTH0_URL,
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://{AUTH0_DOMAIN}/oauth/token",
+            json={
+                "grant_type": "urn:auth0:params:oauth:grant-type:token-exchange:federated-connection-access-token",
+                "client_id": AUTH0_CLIENT_ID,
+                "client_secret": AUTH0_CLIENT_SECRET,
+                "subject_token": refresh_token,
+                "subject_token_type": "urn:ietf:params:oauth:token-type:refresh_token",
+                "requested_token_type": "http://auth0.com/oauth/token-type/federated-connection-access-token",
+                "connection": "github",
+            }
         )
+        data = response.json()
+        github_token = data.get("access_token")
 
-    logger.info("✅ Token Vault: GitHub token retrieved successfully")
-    return github_token
+        if not github_token:
+            logger.error(f"Token Vault exchange failed: {data}")
+            raise ConsentRequiredError(
+                connection="github",
+                authorization_url=AUTH0_URL,
+            )
 
-# ── 11. TOOL 1: CREATE FIX PR ─────────────────────────────────────────────
-def create_fix_pr(
-    repo_owner: str,
-    repo_name: str,
-    branch: str,
-    title: str,
-    body: str,
-    files_to_change: list,
-    dry_run: bool = True,
-) -> str:
-    if dry_run:
-        suggestion = f"[DRY RUN] Would create PR '{title}' on {repo_owner}/{repo_name}\n\n"
-        suggestion += "Proposed changes:\n"
-        for f in files_to_change:
-            suggestion += f"\n--- {f['path']} ---\n{f['content']}\n"
-        log_audit_event("DRY_RUN_PR", f"Suggested fix for {repo_owner}/{repo_name}")
-        return suggestion
+        logger.info("✅ Token Vault: GitHub token retrieved successfully")
+        return github_token
 
-    repo = None
-    ref_created = False
-    try:
-        # Get GitHub token from Token Vault via config
-        config = ensure_config()
-        refresh_token = config.get("configurable", {}).get("_credentials", {}).get("refresh_token")
-        github_token = exchange_for_github_token(refresh_token)
-
-        g = Github(github_token)
-        repo = g.get_repo(f"{repo_owner}/{repo_name}")
-
-        base_sha = repo.get_branch(repo.default_branch).commit.sha
-        repo.create_git_ref(ref=f"refs/heads/{branch}", sha=base_sha)
-        ref_created = True
-
-        for f in files_to_change:
-            try:
-                existing = repo.get_contents(f["path"], ref=branch)
-                repo.update_file(
-                    path=f["path"],
-                    message=f"Security fix: {title}",
-                    content=f["content"],
-                    sha=existing.sha,
-                    branch=branch,
-                )
-            except GithubException as e:
-                if e.status == 404:
-                    repo.create_file(
-                        path=f["path"],
-                        message=f"Security fix: {title}",
-                        content=f["content"],
-                        branch=branch,
-                    )
-                else:
-                    raise
-
-        pr = repo.create_pull(title=title, body=body, head=branch, base=repo.default_branch)
-        log_audit_event("CREATE_PR", f"PR #{pr.number} created", f"{repo_owner}/{repo_name}")
-        return f"Success! PR created: {pr.html_url}"
-
-    except ConsentRequiredError:
-        raise
-    except Exception as e:
-        if ref_created and repo is not None:
-            try:
-                repo.get_git_ref(f"heads/{branch}").delete()
-            except Exception as cleanup_err:
-                logger.warning(f"Failed to cleanup branch {branch}: {cleanup_err}")
-        return f"PR creation failed (rolled back branch): {str(e)}"
-
-# ── 12. PROPOSE FIX TOOL (dry-run wrapper) ────────────────────────────────
-def propose_fix_pr(
-    repo_owner: str,
-    repo_name: str,
-    branch: str,
-    title: str,
-    body: str,
-    files_to_change: list,
-) -> str:
-    """Hardcoded to ALWAYS be a dry run. The AI cannot change this."""
-    return create_fix_pr(
-        repo_owner=repo_owner,
-        repo_name=repo_name,
-        branch=branch,
-        title=title,
-        body=body,
-        files_to_change=files_to_change,
-        dry_run=True,  # Enforced — never passed from outside
-    )
-
-propose_fix_tool = StructuredTool.from_function(
-    func=propose_fix_pr,
-    name="propose_fix_pr",
-    description="Preview security fixes. Does NOT create a real PR.",
-    args_schema=ProposeFixArgs,
-    handle_tool_errors=False,
-)
-
-# ── 13. TOOL 2: FETCH IAC FILES ───────────────────────────────────────────
-def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
+# ── 10. TOOL 1: FETCH IAC FILES ───────────────────────────────────────────
+async def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
     try:
         # ── Token Vault Integration ──────────────────────────────────────
-        # Get the user's refresh token passed via LangChain runnable config.
-        # Exchange it for the GitHub token stored in Token Vault during
-        # the /connect/github OAuth consent flow.
+        # The user's refresh token is passed via LangChain runnable config
+        # from /act → run_agent → agent_executor.ainvoke. We exchange it
+        # for the GitHub access token stored in Token Vault during the
+        # /connect/github OAuth consent flow.
         config = ensure_config()
         refresh_token = config.get("configurable", {}).get("_credentials", {}).get("refresh_token")
 
@@ -358,14 +284,13 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
                 authorization_url=AUTH0_URL,
             )
 
-        github_token = exchange_for_github_token(refresh_token)
+        github_token = await exchange_for_github_token(refresh_token)
         # ────────────────────────────────────────────────────────────────
 
         g = Github(github_token)
         repo = g.get_repo(f"{repo_owner}/{repo_name}")
 
         iac_files = []
-
         raw_contents = repo.get_contents("")
         contents = raw_contents if isinstance(raw_contents, list) else [raw_contents]
 
@@ -390,8 +315,6 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
                     logger.warning(f"Failed to decode {file_content.path}, skipping. Error: {e}")
 
         log_audit_event("FETCH_IAC", f"Retrieved {len(iac_files)} files", f"{repo_owner}/{repo_name}")
-
-        # Return empty string instead of human text to prevent synthetic terraform evaluation
         return "\n\n".join(iac_files) if iac_files else ""
 
     except ConsentRequiredError:
@@ -405,15 +328,15 @@ def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
         raise
 
 fetch_iac_tool = StructuredTool.from_function(
-    func=fetch_iac_files,
+    coroutine=fetch_iac_files,
     name="fetch_iac_files",
     description="Fetch all Terraform/CloudFormation files recursively from a GitHub repository.",
     args_schema=FetchIacFilesArgs,
     handle_tool_errors=False,
 )
 
-# ── 14. TOOL 3: SCAN IAC SECURITY ISSUES ─────────────────────────────────
-def scan_iac_security_issues(code: str) -> str:
+# ── 11. TOOL 2: SCAN IAC SECURITY ISSUES ─────────────────────────────────
+async def scan_iac_security_issues(code: str) -> str:
     if not code.strip():
         return "No IaC files found in the repository. Skipping scan."
 
@@ -430,11 +353,6 @@ def scan_iac_security_issues(code: str) -> str:
                     content = parts[i + 1].strip()
 
                     normalized = os.path.normpath(rel_path).lstrip("/\\")
-
-                    if normalized.startswith("..") or ".." in normalized:
-                        logger.warning(f"Blocked path traversal attempt: {rel_path}")
-                        continue
-
                     target_path = os.path.join(tmp_dir, normalized)
 
                     if not os.path.realpath(target_path).startswith(os.path.realpath(tmp_dir)):
@@ -454,7 +372,9 @@ def scan_iac_security_issues(code: str) -> str:
 
             result = None
             try:
-                result = subprocess.run(
+                # asyncio.to_thread prevents Checkov (10-30s) from blocking the event loop
+                result = await asyncio.to_thread(
+                    subprocess.run,
                     [checkov_bin, "--directory", tmp_dir, "--output", "json", "--quiet"],
                     capture_output=True,
                     text=True,
@@ -480,7 +400,8 @@ def scan_iac_security_issues(code: str) -> str:
     except Exception as e:
         checkov_results = f"Checkov unavailable: {e}"
 
-    # DeepSeek for the actual security analysis (cost-effective for LLM analysis)
+    # DeepSeek for security analysis — cost-effective for LLM-based review.
+    # Using ainvoke (async) to avoid blocking the event loop during long responses.
     llm = ChatOpenAI(
         model="deepseek-chat",
         api_key=os.environ.get("DEEPSEEK_API_KEY"),
@@ -509,22 +430,117 @@ For each issue output:
 
 Be specific. Reference the actual resource names from the code."""
 
-    response = llm.invoke(prompt)
+    response = await llm.ainvoke(prompt)
     log_audit_event("AI_SCAN", "Hybrid Checkov + LLM analysis completed")
     return response.content
 
 scan_tool = StructuredTool.from_function(
-    func=scan_iac_security_issues,
+    coroutine=scan_iac_security_issues,
     name="scan_iac_security_issues",
     description="Analyze IaC code for security issues using rule-based scanning + LLM explanation.",
     args_schema=ScanIacArgs,
 )
 
-# ── 15. AGENT ─────────────────────────────────────────────────────────────
+# ── 12. TOOL 3: PROPOSE FIX PR ────────────────────────────────────────────
+async def _create_fix_pr(
+    repo_owner: str,
+    repo_name: str,
+    branch: str,
+    title: str,
+    body: str,
+    files_to_change: List[FileChange],
+    dry_run: bool = True,
+) -> str:
+    if dry_run:
+        suggestion = f"[DRY RUN] Would create PR '{title}' on {repo_owner}/{repo_name}\n\n"
+        suggestion += "Proposed changes:\n"
+        for f in files_to_change:
+            suggestion += f"\n--- {f.path} ---\n{f.content}\n"
+        log_audit_event("DRY_RUN_PR", f"Suggested fix for {repo_owner}/{repo_name}")
+        return suggestion
+
+    repo = None
+    ref_created = False
+    try:
+        config = ensure_config()
+        refresh_token = config.get("configurable", {}).get("_credentials", {}).get("refresh_token")
+        github_token = await exchange_for_github_token(refresh_token)
+
+        g = Github(github_token)
+        repo = g.get_repo(f"{repo_owner}/{repo_name}")
+
+        base_sha = repo.get_branch(repo.default_branch).commit.sha
+        repo.create_git_ref(ref=f"refs/heads/{branch}", sha=base_sha)
+        ref_created = True
+
+        for f in files_to_change:
+            try:
+                existing = repo.get_contents(f.path, ref=branch)
+                repo.update_file(
+                    path=f.path,
+                    message=f"Security fix: {title}",
+                    content=f.content,
+                    sha=existing.sha,
+                    branch=branch,
+                )
+            except GithubException as e:
+                if e.status == 404:
+                    repo.create_file(
+                        path=f.path,
+                        message=f"Security fix: {title}",
+                        content=f.content,
+                        branch=branch,
+                    )
+                else:
+                    raise
+
+        pr = repo.create_pull(title=title, body=body, head=branch, base=repo.default_branch)
+        log_audit_event("CREATE_PR", f"PR #{pr.number} created", f"{repo_owner}/{repo_name}")
+        return f"Success! PR created: {pr.html_url}"
+
+    except ConsentRequiredError:
+        raise
+    except Exception as e:
+        if ref_created and repo is not None:
+            try:
+                repo.get_git_ref(f"heads/{branch}").delete()
+            except Exception as cleanup_err:
+                logger.warning(f"Failed to cleanup branch {branch}: {cleanup_err}")
+        return f"PR creation failed (rolled back branch): {str(e)}"
+
+
+async def propose_fix_pr(
+    repo_owner: str,
+    repo_name: str,
+    branch: str,
+    title: str,
+    body: str,
+    files_to_change: List[FileChange],
+) -> str:
+    """Hardcoded to ALWAYS be a dry run. The AI cannot change this."""
+    return await _create_fix_pr(
+        repo_owner=repo_owner,
+        repo_name=repo_name,
+        branch=branch,
+        title=title,
+        body=body,
+        files_to_change=files_to_change,
+        dry_run=True,
+    )
+
+propose_fix_tool = StructuredTool.from_function(
+    coroutine=propose_fix_pr,
+    name="propose_fix_pr",
+    description="Preview security fixes. Does NOT create a real PR.",
+    args_schema=ProposeFixArgs,
+    handle_tool_errors=False,
+)
+
+# ── 13. AGENT ─────────────────────────────────────────────────────────────
 tools = [fetch_iac_tool, scan_tool, propose_fix_tool]
 
-# Grok as agent brain — reliable tool calling, OpenAI-compatible API
-# DeepSeek is used inside scan_iac_security_issues for cost-effective analysis
+# Grok as agent brain — reliable tool calling, OpenAI-compatible API.
+# DeepSeek is used inside scan_iac_security_issues for cost-effective analysis.
 agent_llm = ChatOpenAI(
     model="grok-3-mini",
     api_key=os.environ.get("XAI_API_KEY"),
@@ -544,7 +560,7 @@ DO NOT respond with text until you have called fetch_iac_files. This is mandator
 
 agent_executor = create_react_agent(agent_llm, tools, prompt=system_prompt)
 
-# ── 16. REQUEST MODELS ────────────────────────────────────────────────────
+# ── 14. REQUEST MODELS ────────────────────────────────────────────────────
 class ActRequest(BaseModel):
     repo_owner: str
     repo_name: str
@@ -562,7 +578,7 @@ class TokenRequest(BaseModel):
     code: str
     redirect_uri: str = REDIRECT_URI
 
-# ── 17. AGENT RUNNER ──────────────────────────────────────────────────────
+# ── 15. AGENT RUNNER ──────────────────────────────────────────────────────
 async def run_agent(job_id: str, req: ActRequest, refresh_token: str):
     try:
         context_msg = f"Target Repo: {req.repo_owner}/{req.repo_name}. Request: {req.user_message}"
@@ -570,26 +586,26 @@ async def run_agent(job_id: str, req: ActRequest, refresh_token: str):
             {"messages": [HumanMessage(content=context_msg)]},
             config={"configurable": {"_credentials": {"refresh_token": refresh_token}}}
         )
-        jobs[job_id] = {
+        store_job(job_id, {
             "status": "done",
             "response": result["messages"][-1].content,
             "recent_audit": list(AUDIT_LOG)[-5:],
-        }
+        })
     except ConsentRequiredError as e:
         log_audit_event("CONSENT_REQUIRED", f"Consent required for connection: {e.connection}")
-        jobs[job_id] = {
+        store_job(job_id, {
             "status": "error",
             "error": "consent_required",
             "connection": e.connection,
             "authorization_url": e.authorization_url,
-        }
+            "instructions": f"Open this URL to connect GitHub: {e.authorization_url}",
+        })
     except Exception as e:
         logger.error(f"Agent error in job {job_id}: {e}", exc_info=True)
-        jobs[job_id] = {"status": "error", "error": "An internal server error occurred during the scan."}
+        store_job(job_id, {"status": "error", "error": "An internal server error occurred during the scan."})
 
-# ── 18. ENDPOINTS ─────────────────────────────────────────────────────────
+# ── 16. ENDPOINTS ─────────────────────────────────────────────────────────
 
-# ── Root UI ───────────────────────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     return """
@@ -620,7 +636,6 @@ def read_root():
     </html>
     """
 
-# ── Auth Flow ─────────────────────────────────────────────────────────────
 @app.get("/auth/login")
 async def auth_login(request: Request):
     """Initiates login with CSRF protection."""
@@ -697,7 +712,6 @@ async def auth_logout(request: Request):
     log_audit_event("USER_LOGOUT", "User session cleared")
     return {"message": "Logged out successfully."}
 
-# ── Connected Accounts Flow ────────────────────────────────────────────────
 @app.post("/connect/github")
 async def connect_github(req: ConnectRequest, request: Request, user=Depends(get_current_user)):
     """Initiates GitHub connection for the authenticated user."""
@@ -772,12 +786,19 @@ async def connect_status(request: Request, user=Depends(get_current_user)):
         )
         return response.json()
 
-# ── Core Endpoints ─────────────────────────────────────────────────────────
 @app.post("/act")
 async def act_endpoint(req: ActRequest, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
+    # Rate limit: cap concurrent jobs to prevent API credit drain
+    active_jobs = sum(1 for j in jobs.values() if j.get("status") == "running")
+    if active_jobs >= MAX_CONCURRENT_JOBS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many concurrent scans. Maximum is {MAX_CONCURRENT_JOBS}. Please wait for a job to complete."
+        )
+
     job_id = str(uuid.uuid4())
-    jobs[job_id] = {"status": "running"}
-    refresh_token = user.get("refresh_token")  # Pass user's token to agent
+    store_job(job_id, {"status": "running"})
+    refresh_token = user.get("refresh_token")
     background_tasks.add_task(run_agent, job_id, req, refresh_token)
     return {"job_id": job_id, "poll_url": f"/result/{job_id}"}
 
