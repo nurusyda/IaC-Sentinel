@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # ── CONFIG — edit these once ──────────────────────────────────────────────
-AWS_ACCOUNT_ID="YOUR_ACCOUNT_ID"        # e.g. 123456789012
-AWS_REGION="YOUR_REGION"                # e.g. ap-southeast-1
+AWS_ACCOUNT_ID="224092145786"        # e.g. 123456789012
+AWS_REGION="us-east-1"                # e.g. ap-southeast-1
 ECR_REPO="iac-sentinel"
 EB_APP_NAME="iac-sentinel"
 EB_ENV_NAME="iac-sentinel-prod"

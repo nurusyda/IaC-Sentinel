@@ -38,3 +38,9 @@ github_conf/
 *.sh
 !deploy.sh
 cookies.txt
+
+# Ignore the zip files
+*.zip
+
+# Do NOT ignore the extensions folder
+! .ebextensions/

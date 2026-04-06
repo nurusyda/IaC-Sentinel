@@ -967,12 +967,16 @@ async def run_agent(job_id: str, req: ActRequest, refresh_token: SensitiveStr):
     """
     try:
         context_msg = f"Target Repo: {req.repo_owner}/{req.repo_name}. Request: {req.user_message}"
-        result      = await agent_executor.ainvoke(
-            {"messages": [HumanMessage(content=context_msg)]},
-            config={"configurable": {
-                "_credentials": {"refresh_token": refresh_token.reveal()},
-                "_job_id":      job_id,
-            }},
+        # Added asyncio.wait_for with a 240s timeout (4 minutes)
+        result      = await asyncio.wait_for(
+            agent_executor.ainvoke(
+                {"messages": [HumanMessage(content=context_msg)]},
+                config={"configurable": {
+                    "_credentials": {"refresh_token": refresh_token.reveal()},
+                    "_job_id":      job_id,
+                }},
+            ),
+            timeout=240.0
         )
 
         # Grok's final message = the one-sentence summary
@@ -1008,6 +1012,13 @@ async def run_agent(job_id: str, req: ActRequest, refresh_token: SensitiveStr):
             "recent_audit":  job_logs[-5:],
         })
 
+    except asyncio.TimeoutError:
+        log_audit_event("SCAN_TIMEOUT", "Scan timed out after 4 minutes", job_id)
+        logger.error(f"Agent timeout in job {job_id} after 4 minutes.")
+        await update_job(job_id, {
+            "status": "error",
+            "error":  "Scan timed out after 4 minutes."
+        })
     except ConsentRequiredError as e:
         log_audit_event("CONSENT_REQUIRED", f"Consent required: {e.connection}", job_id)
         await update_job(job_id, {
