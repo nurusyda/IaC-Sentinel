@@ -5,33 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IaC Sentinel — AI Security Scanner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg:         #f5f3ee;
   --surface:    #faf9f6;
   --surface2:   #f0ede6;
-  --border:     rgba(60,50,30,0.12);
-  --border2:    rgba(60,50,30,0.22);
-  --ink:        #1c1a16;
-  --ink2:       #5a5444;
-  --ink3:       #9a9082;
+  --surface3:   #e8e4da;
+  --border:     rgba(60,50,30,0.11);
+  --border2:    rgba(60,50,30,0.20);
   --accent:     #1a4731;
-  --accent-bg:  #e8f2ec;
-  --accent-mid: rgba(26,71,49,0.2);
+  --green-dim:  rgba(26,71,49,0.08);
+  --green-mid:  rgba(26,71,49,0.18);
   --red:        #8b1a1a;
-  --red-bg:     #fdf0f0;
+  --red-dim:    rgba(139,26,26,0.07);
   --amber:      #7a4a00;
-  --amber-bg:   #fdf6e8;
+  --amber-dim:  rgba(122,74,0,0.08);
   --blue:       #1a3a6b;
-  --blue-bg:    #eef3fc;
+  --blue-dim:   rgba(26,58,107,0.08);
+  --text:       #1c1a16;
+  --text2:      #5a5444;
+  --text3:      #9a9082;
   --mono:       'DM Mono', monospace;
   --serif:      'Fraunces', serif;
   --sans:       'Plus Jakarta Sans', sans-serif;
-  --r:          8px;
-  --r2:         14px;
-  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md:  0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --r:          7px;
+  --r2:         13px;
+  --sidebar-w:  232px;
+  --shadow:     0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,836 +41,607 @@ html { scroll-behavior: smooth; }
 
 body {
   background: var(--bg);
-  color: var(--ink);
+  color: var(--text);
   font-family: var(--sans);
   font-size: 15px;
   line-height: 1.65;
   min-height: 100vh;
 }
 
-/* ── PAGE SHELL ─────────────────────────────────────────── */
+/* ── SHELL ── */
 .shell {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: var(--sidebar-w) 1fr;
   min-height: 100vh;
 }
 
-/* ── SIDEBAR ─────────────────────────────────────────────── */
+/* ── SIDEBAR ── */
 .sidebar {
   background: var(--surface);
   border-right: 1px solid var(--border);
-  padding: 2rem 1.5rem;
+  padding: 1.75rem 1.4rem;
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1.75rem;
   position: sticky;
   top: 0;
   height: 100vh;
   overflow-y: auto;
 }
 
-.logo {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-}
+.logo { display: flex; align-items: flex-start; gap: 0.55rem; }
 
 .logo-icon {
-  width: 32px;
-  height: 32px;
+  width: 30px; height: 30px;
   background: var(--accent);
   border-radius: var(--r);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 2px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 2px;
 }
-
-.logo-icon svg { width: 16px; height: 16px; fill: #fff; }
+.logo-icon svg { width: 14px; height: 14px; fill: #fff; }
 
 .logo-text .name {
   font-family: var(--serif);
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 500;
-  color: var(--ink);
+  color: var(--text);
   letter-spacing: -0.02em;
   line-height: 1.2;
 }
-
 .logo-text .sub {
   font-family: var(--mono);
-  font-size: 0.6rem;
-  color: var(--ink3);
+  font-size: 0.58rem;
+  color: var(--text3);
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  margin-top: 0.1rem;
 }
 
-/* nav steps */
 .nav-steps { display: flex; flex-direction: column; gap: 2px; }
 
 .nav-step {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.55rem 0.75rem;
+  gap: 0.55rem;
+  padding: 0.5rem 0.7rem;
   border-radius: var(--r);
-  font-size: 0.82rem;
-  color: var(--ink3);
-  cursor: default;
-  transition: all 0.15s;
+  font-size: 0.8rem;
+  color: var(--text3);
   user-select: none;
+  font-family: var(--sans);
+  transition: all 0.15s;
 }
-
 .nav-step.active {
-  background: var(--accent-bg);
+  background: var(--green-dim);
   color: var(--accent);
-  font-weight: 500;
+  font-weight: 600;
+  border: 1px solid var(--green-mid);
 }
-
-.nav-step.done { color: var(--ink2); }
+.nav-step.done { color: var(--text2); }
 .nav-step.done:hover { background: var(--surface2); cursor: pointer; }
 
 .nav-dot {
-  width: 20px;
-  height: 20px;
+  width: 19px; height: 19px;
   border-radius: 50%;
   border: 1.5px solid currentColor;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   font-family: var(--mono);
-  font-size: 0.6rem;
-  font-weight: 500;
+  font-size: 0.58rem; font-weight: 500;
   flex-shrink: 0;
 }
-
-.nav-step.active .nav-dot {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
+.nav-step.active .nav-dot,
 .nav-step.done .nav-dot {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--accent); border-color: var(--accent); color: #fff;
 }
 
-/* sidebar status */
-.sidebar-status {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+.sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 0.45rem; }
 
 .status-pill {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: var(--mono);
-  font-size: 0.65rem;
-  color: var(--ink3);
-  letter-spacing: 0.05em;
-  padding: 0.35rem 0.6rem;
+  display: flex; align-items: center; gap: 0.4rem;
+  font-family: var(--mono); font-size: 0.62rem;
+  color: var(--text3); letter-spacing: 0.05em;
+  padding: 0.3rem 0.55rem;
   background: var(--surface2);
   border-radius: 100px;
   border: 1px solid var(--border);
 }
-
 .status-dot {
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: var(--ink3);
-  flex-shrink: 0;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--text3); flex-shrink: 0;
+  transition: background 0.3s;
 }
-
-.status-dot.live {
-  background: var(--accent);
-  animation: blink 2.5s ease-in-out infinite;
-}
-
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
+.status-dot.live { background: var(--accent); animation: pulse 2.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
 .auth-pill {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-mid);
+  display: flex; align-items: center; gap: 0.45rem;
+  font-size: 0.72rem; color: var(--accent);
+  background: var(--green-dim);
+  border: 1px solid var(--green-mid);
   border-radius: var(--r);
-  padding: 0.4rem 0.75rem;
+  padding: 0.38rem 0.7rem;
+  font-weight: 500;
 }
-
 .auth-pill button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 0.7rem;
-  color: var(--ink3);
-  margin-left: auto;
-  font-family: var(--mono);
-  padding: 0.1rem 0.25rem;
-  border-radius: 3px;
+  background: none; border: none; cursor: pointer;
+  font-size: 0.67rem; color: var(--text3);
+  margin-left: auto; font-family: var(--mono);
+  padding: 0.1rem 0.2rem; border-radius: 3px;
   transition: color 0.15s;
 }
 .auth-pill button:hover { color: var(--red); }
 
-/* ── MAIN CONTENT ─────────────────────────────────────────── */
+/* ── MAIN ── */
 .main {
-  padding: 2.5rem 2.5rem 4rem;
-  max-width: 780px;
+  padding: 2.25rem 2.25rem 4rem;
+  max-width: 760px;
 }
 
 .page-title {
   font-family: var(--serif);
-  font-size: 1.75rem;
-  font-weight: 400;
-  color: var(--ink);
-  letter-spacing: -0.02em;
-  margin-bottom: 0.3rem;
-  line-height: 1.2;
+  font-size: 1.65rem; font-weight: 400;
+  color: var(--text); letter-spacing: -0.02em;
+  margin-bottom: 0.25rem; line-height: 1.2;
 }
-
 .page-sub {
-  font-size: 0.875rem;
-  color: var(--ink3);
-  margin-bottom: 2rem;
+  font-size: 0.85rem; color: var(--text3);
+  margin-bottom: 1.75rem;
 }
 
-/* ── CARDS ────────────────────────────────────────────────── */
+/* ── CARDS ── */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r2);
-  margin-bottom: 1rem;
+  margin-bottom: 0.9rem;
   box-shadow: var(--shadow);
   transition: border-color 0.2s, opacity 0.2s;
   overflow: hidden;
 }
-
-.card.locked { opacity: 0.45; pointer-events: none; }
+.card.locked { opacity: 0.42; pointer-events: none; }
 .card.active { border-color: var(--accent); box-shadow: var(--shadow-md); }
 .card.collapsed .card-body { display: none; }
-.card.collapsed { opacity: 0.65; box-shadow: none; }
+.card.collapsed { opacity: 0.62; box-shadow: none; }
 .card.collapsed .card-head { border-bottom: none; }
 
 .card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.9rem 1.15rem;
   background: var(--surface2);
   border-bottom: 1px solid var(--border);
-  cursor: default;
 }
-
 .card.done-card .card-head { cursor: pointer; }
 .card.done-card .card-head:hover { background: var(--bg); }
 
 .card-title {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--ink);
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.85rem; font-weight: 600; color: var(--text);
 }
-
 .card-active-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--border2);
-  flex-shrink: 0;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--border2); flex-shrink: 0; transition: background 0.2s;
 }
 .card.active .card-active-dot { background: var(--accent); }
 
-.card-meta { display: flex; gap: 0.4rem; align-items: center; }
+.card-meta { display: flex; gap: 0.35rem; align-items: center; }
 
 .card-chevron {
-  font-size: 0.6rem;
-  color: var(--ink3);
-  transition: transform 0.2s;
-  margin-left: 0.25rem;
+  font-size: 0.58rem; color: var(--text3);
+  transition: transform 0.2s; margin-left: 0.2rem;
 }
 .card.collapsed .card-chevron { transform: rotate(-90deg); }
 
-.card-body { padding: 1.5rem 1.25rem; }
+.card-body { padding: 1.35rem 1.15rem; }
 
 .card-desc {
-  font-size: 0.875rem;
-  color: var(--ink2);
-  line-height: 1.7;
-  margin-bottom: 1.25rem;
+  font-size: 0.855rem; color: var(--text2);
+  line-height: 1.7; margin-bottom: 1.15rem;
 }
 
-/* ── TAGS ──────────────────────────────────────────────────── */
+/* ── TAGS ── */
 .tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.18rem 0.55rem;
-  border-radius: 4px;
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border: 1px solid transparent;
+  display: inline-flex; align-items: center;
+  padding: 0.16rem 0.5rem; border-radius: 4px;
+  font-family: var(--mono); font-size: 0.58rem;
+  font-weight: 500; letter-spacing: 0.08em;
+  text-transform: uppercase; border: 1px solid transparent;
 }
+.tag-green { background: var(--green-dim); color: var(--accent); border-color: var(--green-mid); }
+.tag-amber { background: var(--amber-dim); color: var(--amber); }
+.tag-blue  { background: var(--blue-dim);  color: var(--blue); }
 
-.tag-green  { background: var(--accent-bg); color: var(--accent); border-color: var(--accent-mid); }
-.tag-amber  { background: var(--amber-bg);  color: var(--amber); }
-.tag-blue   { background: var(--blue-bg);   color: var(--blue); }
-
-/* ── BUTTONS ───────────────────────────────────────────────── */
+/* ── BUTTONS ── */
 .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.55rem 1.1rem;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.52rem 1.05rem;
   border-radius: var(--r);
-  font-family: var(--sans);
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  transition: all 0.15s;
-  white-space: nowrap;
-  letter-spacing: -0.01em;
+  font-family: var(--sans); font-size: 0.82rem; font-weight: 600;
+  cursor: pointer; border: none; outline: none;
+  transition: all 0.15s ease;
+  white-space: nowrap; letter-spacing: -0.01em;
 }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #225c3e; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26,71,49,0.22); }
+.btn-primary:disabled { background: var(--surface2); color: var(--text3); cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-outline { background: transparent; color: var(--text2); border: 1px solid var(--border2); }
+.btn-outline:hover { border-color: var(--text2); color: var(--text); }
+.btn-sm { padding: 0.28rem 0.65rem; font-size: 0.72rem; }
 
-.btn-primary {
-  background: var(--accent);
-  color: #fff;
-}
-.btn-primary:hover { background: #225c3e; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26,71,49,0.25); }
-.btn-primary:disabled { background: var(--surface2); color: var(--ink3); cursor: not-allowed; transform: none; box-shadow: none; }
-
-.btn-outline {
-  background: transparent;
-  color: var(--ink2);
-  border: 1px solid var(--border2);
-}
-.btn-outline:hover { border-color: var(--ink2); color: var(--ink); }
-
-.btn-sm { padding: 0.3rem 0.7rem; font-size: 0.75rem; }
-
-/* ── INPUTS ──────────────────────────────────────────────── */
-.field { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; }
-
+/* ── INPUTS ── */
+.field { display: flex; flex-direction: column; gap: 0.28rem; flex: 1; }
 .field-label {
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  color: var(--ink3);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-family: var(--mono); font-size: 0.6rem;
+  color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase;
 }
-
 .input {
-  background: var(--bg);
-  border: 1px solid var(--border2);
-  border-radius: var(--r);
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: 0.82rem;
-  padding: 0.6rem 0.85rem;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  width: 100%;
+  background: var(--bg); border: 1px solid var(--border2);
+  border-radius: var(--r); color: var(--text);
+  font-family: var(--mono); font-size: 0.8rem;
+  padding: 0.58rem 0.8rem; outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s; width: 100%;
 }
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(26,71,49,0.09); }
+.input::placeholder { color: var(--text3); }
+.field-row { display: flex; gap: 0.7rem; align-items: flex-end; flex-wrap: wrap; }
 
-.input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(26,71,49,0.1);
-}
-.input::placeholder { color: var(--ink3); }
-
-.field-row { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; }
-
-/* ── CONNECT BOX ──────────────────────────────────────────── */
+/* ── CONNECT BOX ── */
 .connect-box {
-  display: none;
-  background: var(--amber-bg);
+  display: none; background: #fdf6e8;
   border: 1px solid rgba(122,74,0,0.2);
-  border-radius: var(--r);
-  padding: 1.1rem;
-  margin-top: 1.25rem;
+  border-radius: var(--r); padding: 1rem;
+  margin-top: 1.15rem;
 }
-.connect-box.show { display: block; animation: up 0.2s ease; }
-
-@keyframes up { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+.connect-box.show { display: block; animation: fadeUp 0.2s ease; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
 
 .connect-box-label {
-  font-family: var(--mono);
-  font-size: 0.65rem;
-  font-weight: 500;
-  color: var(--amber);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  margin-bottom: 0.6rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  font-family: var(--mono); font-size: 0.62rem; font-weight: 500;
+  color: var(--amber); letter-spacing: 0.1em;
+  text-transform: uppercase; margin-bottom: 0.5rem;
+  display: flex; align-items: center; gap: 0.35rem;
 }
 
-.connect-url {
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  color: var(--blue);
-  word-break: break-all;
-  line-height: 1.5;
-  text-decoration: none;
-  display: block;
-  margin-bottom: 0.85rem;
+/* ── SCAN PROGRESS ── */
+.scan-status-bar {
+  display: flex; align-items: center; gap: 0.6rem;
+  font-size: 0.8rem; color: var(--text2);
+  padding: 0.55rem 0.85rem;
+  background: var(--surface2);
+  border-radius: var(--r); border: 1px solid var(--border);
+  margin-bottom: 0.45rem;
 }
-.connect-url:hover { text-decoration: underline; }
-
-/* ── TERMINAL ─────────────────────────────────────────────── */
 .terminal {
-  background: var(--ink);
-  border-radius: var(--r);
-  padding: 1rem 1.15rem;
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  line-height: 1.9;
-  max-height: 220px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #444 transparent;
-  margin-top: 0.85rem;
+  background: var(--text); border-radius: var(--r);
+  padding: 0.85rem 1rem; font-family: var(--mono);
+  font-size: 0.72rem; line-height: 1.9;
+  max-height: 200px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: #444 transparent;
+  margin-top: 0.75rem;
 }
 .terminal::-webkit-scrollbar { width: 3px; }
 .terminal::-webkit-scrollbar-thumb { background: #444; }
-
-.t-line { display: flex; gap: 0.5rem; animation: tFade 0.2s ease; }
+.t-line { display: flex; gap: 0.45rem; animation: tFade 0.2s ease; }
 @keyframes tFade { from{opacity:0;transform:translateY(2px)} to{opacity:1;transform:none} }
 .t-prompt { color: #4a7c5e; flex-shrink: 0; user-select: none; }
-.t-text   { color: #a8b5a2; }
-.t-ok     { color: #5dbb7a; }
-.t-warn   { color: #d4a84b; }
-.t-err    { color: #e06c6c; }
-.t-info   { color: #7daadd; }
+.t-text  { color: #a8b5a2; }
+.t-ok    { color: #5dbb7a; }
+.t-warn  { color: #d4a84b; }
+.t-err   { color: #e06c6c; }
+.t-info  { color: #7daadd; }
 
-/* ── SCAN STATUS ──────────────────────────────────────────── */
-.scan-status-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  font-size: 0.82rem;
-  color: var(--ink2);
-  padding: 0.6rem 0.9rem;
-  background: var(--surface2);
-  border-radius: var(--r);
-  border: 1px solid var(--border);
-  margin-bottom: 0.5rem;
-}
-
-/* ── RESULTS ──────────────────────────────────────────────── */
-/* Summary strip */
-.result-summary {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-}
-
-.result-stat {
-  background: var(--surface2);
-  border-radius: var(--r);
-  padding: 0.85rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.result-stat-label {
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  color: var(--ink3);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.result-stat-value {
-  font-family: var(--serif);
-  font-size: 1.6rem;
-  font-weight: 300;
-  color: var(--ink);
-  line-height: 1;
-}
-
-.result-stat-value.high { color: var(--red); }
-.result-stat-value.amber { color: var(--amber); }
-.result-stat-value.low { color: var(--blue); }
-
-/* Section heading */
-.section-head {
-  font-family: var(--serif);
-  font-size: 1rem;
-  font-weight: 400;
-  color: var(--ink);
-  margin: 1.5rem 0 0.65rem;
-  padding-bottom: 0.35rem;
+/* ── RESULTS CARD ── */
+.results-summary-bar {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.7rem 1rem; margin-bottom: 1.15rem;
+  background: var(--surface2); border-radius: var(--r);
+  border-left: 3px solid var(--accent);
+  font-size: 0.875rem; color: var(--text2); line-height: 1.6;
+  border-right: 1px solid var(--border);
+  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
-  letter-spacing: -0.01em;
-  font-style: italic;
 }
 
-/* Finding cards */
+/* ── TABS ── */
+.tabs {
+  display: flex; gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.15rem;
+}
+.tab {
+  padding: 0.55rem 1rem;
+  font-family: var(--mono); font-size: 0.72rem;
+  color: var(--text3); cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+  display: flex; align-items: center; gap: 0.4rem;
+  user-select: none;
+}
+.tab:hover { color: var(--text2); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-count {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 0.05rem 0.45rem;
+  border-radius: 100px; font-size: 0.6rem;
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── SEVERITY BADGES (filter) ── */
+.sev-filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.sev-filter {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.7rem; border-radius: 100px;
+  font-family: var(--mono); font-size: 0.65rem; font-weight: 500;
+  cursor: pointer; border: 1px solid transparent;
+  transition: all 0.15s; user-select: none;
+}
+.sev-filter.high   { background: rgba(139,26,26,0.08);  color: var(--red);   border-color: rgba(139,26,26,0.2); }
+.sev-filter.medium { background: rgba(122,74,0,0.08);   color: var(--amber); border-color: rgba(122,74,0,0.2); }
+.sev-filter.low    { background: rgba(26,58,107,0.08);  color: var(--blue);  border-color: rgba(26,58,107,0.2); }
+.sev-filter.off    { opacity: 0.35; }
+.sev-filter:hover  { opacity: 1 !important; }
+
+/* ── FINDING ITEMS ── */
 .finding {
   border: 1px solid var(--border);
-  border-radius: var(--r);
-  margin: 0.4rem 0;
-  overflow: hidden;
-  transition: border-color 0.15s;
+  border-radius: var(--r); margin: 0.35rem 0;
+  overflow: hidden; transition: border-color 0.15s;
   background: var(--surface);
 }
-
-.finding:has(summary:hover),
 .finding[open] { border-color: var(--border2); box-shadow: var(--shadow); }
-
 .finding summary {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.65rem 0.9rem;
+  display: flex; align-items: flex-start; gap: 0.55rem;
+  padding: 0.6rem 0.85rem;
+  cursor: pointer; list-style: none;
   background: var(--surface);
-  cursor: pointer;
-  list-style: none;
-  font-size: 0.855rem;
-  color: var(--ink);
-  font-weight: 500;
 }
 .finding summary::-webkit-details-marker { display: none; }
 .finding summary:hover { background: var(--surface2); }
+.finding.hidden { display: none; }
 
 .finding-sev {
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  font-weight: 500;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  flex-shrink: 0;
+  font-family: var(--mono); font-size: 0.58rem; font-weight: 500;
+  letter-spacing: 0.07em; text-transform: uppercase;
+  padding: 0.14rem 0.45rem; border-radius: 4px;
+  flex-shrink: 0; margin-top: 3px;
 }
+.sev-high   { background: rgba(139,26,26,0.08); color: var(--red);   border: 1px solid rgba(139,26,26,0.18); }
+.sev-medium { background: rgba(122,74,0,0.08);  color: var(--amber); border: 1px solid rgba(122,74,0,0.18); }
+.sev-low    { background: rgba(26,58,107,0.08); color: var(--blue);  border: 1px solid rgba(26,58,107,0.18); }
 
-.sev-high   { background: var(--red-bg);   color: var(--red);   border: 1px solid rgba(139,26,26,0.18); }
-.sev-medium { background: var(--amber-bg); color: var(--amber); border: 1px solid rgba(122,74,0,0.18); }
-.sev-low    { background: var(--blue-bg);  color: var(--blue);  border: 1px solid rgba(26,58,107,0.18); }
-
-.finding-headline {
-  flex: 1;
-  line-height: 1.35;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+.finding-headline { flex: 1; display: flex; flex-direction: column; gap: 0.08rem; min-width: 0; }
+.finding-resource {
+  font-family: var(--mono); font-size: 0.78rem;
+  font-weight: 500; color: var(--text); line-height: 1.25;
 }
-.finding-headline-name {
-  color: var(--ink);
-  font-weight: 600;
-  font-family: var(--mono);
-  font-size: 0.8rem;
+.finding-desc {
+  font-size: 0.78rem; color: var(--text3);
+  font-style: italic; font-family: var(--sans);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.finding-headline-desc {
-  color: var(--ink3);
-  font-weight: 400;
-  font-size: 0.8rem;
-  font-style: italic;
-  font-family: var(--sans);
-}
-
 .finding-chevron {
-  margin-left: auto;
-  font-size: 0.55rem;
-  color: var(--ink3);
-  transition: transform 0.2s;
-  flex-shrink: 0;
+  margin-left: auto; font-size: 0.52rem;
+  color: var(--text3); transition: transform 0.2s; flex-shrink: 0;
+  margin-top: 5px;
 }
 .finding[open] .finding-chevron { transform: rotate(180deg); }
 
 .finding-body {
-  padding: 0.75rem 0.9rem 0.9rem;
+  padding: 0.65rem 0.85rem 0.8rem;
   border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  background: var(--bg);
+  display: flex; flex-direction: column; gap: 0.45rem;
+  font-size: 0.845rem; background: var(--bg);
 }
-
-.finding-copy {
-  display: inline-flex;
-  align-self: flex-start;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.22rem 0.6rem;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: 4px;
-  color: var(--ink3);
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  text-transform: uppercase;
-  transition: all 0.12s;
-  margin-top: 0.4rem;
-}
-.finding-copy:hover { color: var(--ink2); border-color: var(--ink3); }
-.finding-copy.copied { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
-
-.finding-row {
-  display: flex;
-  gap: 0.5rem;
-  line-height: 1.55;
-}
+.finding-row { display: flex; gap: 0.5rem; line-height: 1.55; }
 .finding-label {
-  font-family: var(--mono);
-  font-size: 0.65rem;
-  font-weight: 500;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  flex-shrink: 0;
-  padding-top: 0.15rem;
-  width: 3.5rem;
+  font-family: var(--mono); font-size: 0.6rem; font-weight: 500;
+  letter-spacing: 0.07em; text-transform: uppercase;
+  flex-shrink: 0; padding-top: 0.15rem; width: 3.2rem;
 }
 .finding-label.risk { color: var(--amber); }
 .finding-label.fix  { color: var(--accent); }
-.finding-text { color: var(--ink2); }
+.finding-text { color: var(--text2); }
 
-/* Fixed code block */
+code.ic {
+  font-family: var(--mono); font-size: 0.8em;
+  background: var(--surface2); border: 1px solid var(--border);
+  padding: 0.08em 0.3em; border-radius: 3px; color: var(--accent);
+}
+
+/* ── FIX BLOCKS ── */
 .fix-block {
-  margin: 1.25rem 0 0.75rem;
-  border: 1px solid var(--border2);
-  border-radius: var(--r);
+  margin: 0 0 1rem;
+  border: 1px solid var(--border2); border-radius: var(--r);
   overflow: hidden;
 }
-
 .fix-block-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0.9rem;
-  background: var(--surface2);
-  border-bottom: 1px solid var(--border);
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--ink2);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.45rem 0.85rem;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 0.67rem; color: var(--text2);
 }
-
 .fix-block pre {
-  background: var(--ink);
-  padding: 1rem 1.1rem;
-  overflow-x: auto;
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  line-height: 1.75;
-  color: #c8e6b4;
-  margin: 0;
-  scrollbar-width: thin;
-  scrollbar-color: #444 transparent;
+  background: var(--text); padding: 0.9rem 1rem;
+  overflow-x: auto; font-family: var(--mono);
+  font-size: 0.72rem; line-height: 1.75;
+  color: #c8e6b4; margin: 0;
+  max-height: 380px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: #444 transparent;
 }
-
-.fix-block pre::-webkit-scrollbar { height: 3px; }
+.fix-block pre::-webkit-scrollbar { height: 3px; width: 3px; }
 .fix-block pre::-webkit-scrollbar-thumb { background: #444; }
 
-/* Inline code */
-code.inline-code {
-  font-family: var(--mono);
-  font-size: 0.82em;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  padding: 0.1em 0.35em;
-  border-radius: 4px;
-  color: var(--accent);
-}
-
-/* Prose */
-.result-prose {
-  font-size: 0.9rem;
-  line-height: 1.7;
-  color: var(--ink2);
-}
-.result-prose strong { color: var(--ink); font-weight: 600; }
-.result-prose p { margin-bottom: 0.85rem; }
-.result-prose p:last-child { margin-bottom: 0; }
-
-/* ── NEXT STEPS ───────────────────────────────────────────── */
-.next-steps {
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-mid);
-  border-radius: var(--r2);
-  padding: 1.25rem;
-  margin-top: 1.5rem;
-}
-
-.next-steps-title {
-  font-family: var(--serif);
-  font-size: 0.95rem;
-  font-style: italic;
-  font-weight: 400;
-  color: var(--accent);
-  margin-bottom: 0.85rem;
-}
-
-.next-step {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.55rem 0;
-  border-bottom: 1px solid var(--accent-mid);
-  font-size: 0.84rem;
-  color: var(--ink2);
-}
-.next-step:last-child { border-bottom: none; }
-
-.next-step-num {
-  width: 20px; height: 20px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 0.15rem;
-}
-
-/* ── AUDIT ────────────────────────────────────────────────── */
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin: 1.75rem 0 1rem;
-  font-family: var(--mono);
-  font-size: 0.62rem;
-  color: var(--ink3);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.divider::before, .divider::after { content:''; flex:1; height:1px; background: var(--border); }
-
-.audit-row {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.78rem;
-  animation: up 0.2s ease;
-}
-.audit-row:last-child { border-bottom: none; }
-
-.audit-time { font-family: var(--mono); font-size: 0.65rem; color: var(--ink3); flex-shrink: 0; }
-
-.audit-badge {
-  padding: 0.13rem 0.5rem;
-  border-radius: 4px;
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  flex-shrink: 0;
-  text-transform: uppercase;
-}
-.audit-badge.FETCH_IAC       { background: var(--blue-bg);   color: var(--blue); }
-.audit-badge.AI_SCAN         { background: var(--amber-bg);  color: var(--amber); }
-.audit-badge.DRY_RUN_PR      { background: var(--accent-bg); color: var(--accent); }
-.audit-badge.GITHUB_CONNECTED{ background: var(--accent-bg); color: var(--accent); }
-.audit-badge.USER_LOGIN      { background: var(--surface2);  color: var(--ink2); }
-.audit-badge.USER_LOGOUT     { background: var(--surface2);  color: var(--ink2); }
-
-.audit-detail { color: var(--ink2); flex: 1; }
-.audit-target { font-family: var(--mono); font-size: 0.65rem; color: var(--ink3); }
-
-/* ── CODE COPY BTN ───────────────────────────────────────── */
-.code-block { position: relative; margin: 0.75rem 0; }
-.code-block pre { margin: 0; }
-
 .copy-btn {
-  position: absolute;
-  top: 0.4rem; right: 0.4rem;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.22rem 0.55rem;
-  background: rgba(255,255,255,0.08);
+  display: flex; align-items: center; gap: 0.28rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 4px;
-  color: rgba(255,255,255,0.45);
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  transition: all 0.12s;
-  text-transform: uppercase;
+  border-radius: 4px; color: rgba(255,255,255,0.45);
+  font-family: var(--mono); font-size: 0.58rem;
+  font-weight: 500; cursor: pointer;
+  transition: all 0.12s; text-transform: uppercase; letter-spacing: 0.06em;
 }
-.copy-btn:hover { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.75); }
+.copy-btn:hover { background: rgba(255,255,255,0.13); color: rgba(255,255,255,0.75); }
 .copy-btn.copied { color: #5dbb7a; border-color: rgba(93,187,122,0.35); background: rgba(93,187,122,0.1); }
 
-/* ── SPINNER ─────────────────────────────────────────────── */
+.copy-btn-light {
+  display: flex; align-items: center; gap: 0.28rem;
+  padding: 0.18rem 0.5rem;
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: 4px; color: var(--text3);
+  font-family: var(--mono); font-size: 0.58rem;
+  font-weight: 500; cursor: pointer;
+  transition: all 0.12s; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.copy-btn-light:hover { color: var(--text2); border-color: var(--text3); }
+.copy-btn-light.copied { color: var(--accent); border-color: var(--accent); background: var(--green-dim); }
+
+/* ── SECTION HEAD ── */
+.section-head {
+  font-family: var(--serif); font-size: 0.95rem; font-weight: 400;
+  color: var(--text); margin: 0 0 0.75rem;
+  padding-bottom: 0.3rem; border-bottom: 1px solid var(--border);
+  letter-spacing: -0.01em; font-style: italic;
+}
+
+/* ── EMPTY STATE ── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 2.25rem 1rem; text-align: center; gap: 0.6rem;
+}
+.empty-icon {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--green-dim); border: 1px solid var(--green-mid);
+  display: flex; align-items: center; justify-content: center; font-size: 1rem;
+}
+.empty-title { font-family: var(--serif); font-size: 0.95rem; font-style: italic; color: var(--accent); }
+.empty-sub { font-size: 0.8rem; color: var(--text3); max-width: 260px; line-height: 1.5; }
+
+/* ── NEXT STEPS ── */
+.next-steps {
+  background: var(--green-dim); border: 1px solid var(--green-mid);
+  border-radius: var(--r2); padding: 1.1rem; margin-top: 0.5rem;
+}
+.next-steps-title {
+  font-family: var(--serif); font-size: 0.9rem; font-style: italic;
+  font-weight: 400; color: var(--accent); margin-bottom: 0.75rem;
+}
+.next-step {
+  display: flex; align-items: flex-start; gap: 0.7rem;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--green-mid);
+  font-size: 0.82rem; color: var(--text2);
+}
+.next-step:last-child { border-bottom: none; }
+.next-step-num {
+  width: 19px; height: 19px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  font-family: var(--mono); font-size: 0.6rem; font-weight: 500;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 0.12rem;
+}
+
+/* ── AUDIT ── */
+.audit-entry {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.45rem 0; border-bottom: 1px solid var(--border);
+  font-size: 0.76rem;
+}
+.audit-entry:last-child { border-bottom: none; }
+.audit-time { font-family: var(--mono); font-size: 0.62rem; color: var(--text3); flex-shrink: 0; }
+.audit-badge {
+  padding: 0.12rem 0.45rem; border-radius: 4px;
+  font-family: var(--mono); font-size: 0.58rem; font-weight: 500;
+  letter-spacing: 0.06em; flex-shrink: 0; text-transform: uppercase;
+}
+.audit-badge.FETCH_IAC        { background: var(--blue-dim);  color: var(--blue); }
+.audit-badge.AI_SCAN          { background: var(--amber-dim); color: var(--amber); }
+.audit-badge.DRY_RUN_PR       { background: var(--green-dim); color: var(--accent); }
+.audit-badge.GITHUB_CONNECTED { background: var(--green-dim); color: var(--accent); }
+.audit-badge.USER_LOGIN       { background: var(--surface2);  color: var(--text2); }
+.audit-badge.USER_LOGOUT      { background: var(--surface2);  color: var(--text2); }
+.audit-detail { color: var(--text2); flex: 1; }
+.audit-target { font-family: var(--mono); font-size: 0.62rem; color: var(--text3); }
+
+/* ── SPINNER ── */
 .spinner {
-  width: 12px; height: 12px;
+  width: 11px; height: 11px;
   border: 1.5px solid var(--border2);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
-  display: inline-block;
-  flex-shrink: 0;
+  display: inline-block; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── FOOTER ──────────────────────────────────────────────── */
+/* ── SUCCESS NOTIFICATION ── */
+.success-note {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.6rem 0.85rem; border-radius: var(--r);
+  background: var(--green-dim); border: 1px solid var(--green-mid);
+  color: var(--accent); font-size: 0.8rem; font-weight: 500;
+  animation: fadeUp 0.3s ease; margin-top: 0.75rem;
+}
+.success-note svg { flex-shrink: 0; }
+
+/* ── STATS ROW ── */
+.stats-row {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem; margin-bottom: 1.1rem;
+}
+.stat-box {
+  background: var(--surface2); border-radius: var(--r);
+  padding: 0.75rem 0.9rem;
+  display: flex; flex-direction: column; gap: 0.15rem;
+}
+.stat-label { font-family: var(--mono); font-size: 0.58rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; }
+.stat-value { font-family: var(--serif); font-size: 1.5rem; font-weight: 300; line-height: 1; }
+.stat-value.high   { color: var(--red); }
+.stat-value.medium { color: var(--amber); }
+.stat-value.low    { color: var(--blue); }
+
+/* ── DIVIDER ── */
+.divider {
+  display: flex; align-items: center; gap: 0.65rem;
+  margin: 1.5rem 0 0.85rem;
+  font-family: var(--mono); font-size: 0.6rem;
+  color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase;
+}
+.divider::before, .divider::after { content:''; flex:1; height:1px; background: var(--border); }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed; bottom: 1.35rem; right: 1.35rem;
+  background: var(--text); color: #e8e2d8;
+  border-radius: var(--r); padding: 0.65rem 1rem;
+  font-size: 0.8rem; z-index: 10000;
+  transform: translateY(60px); opacity: 0;
+  transition: all 0.22s ease; max-width: 270px;
+  font-family: var(--sans);
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.ok   { background: var(--accent); }
+.toast.err  { background: var(--red); }
+
+/* ── FOOTER ── */
 footer {
-  margin-top: 3rem;
-  padding-top: 1.25rem;
+  margin-top: 2.5rem; padding-top: 1.1rem;
   border-top: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.75rem;
-  color: var(--ink3);
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.72rem; color: var(--text3);
+  flex-wrap: wrap; gap: 0.5rem;
   font-family: var(--mono);
 }
 
-/* ── TOAST ───────────────────────────────────────────────── */
-.toast {
-  position: fixed;
-  bottom: 1.5rem; right: 1.5rem;
-  background: var(--ink);
-  color: #e8e2d8;
-  border-radius: var(--r);
-  padding: 0.7rem 1.1rem;
-  font-size: 0.82rem;
-  font-family: var(--sans);
-  z-index: 10000;
-  transform: translateY(60px);
-  opacity: 0;
-  transition: all 0.22s ease;
-  max-width: 280px;
-}
-.toast.show { transform: translateY(0); opacity: 1; }
-.toast.ok  { background: var(--accent); }
-.toast.err { background: var(--red); }
-
-/* ── RESPONSIVE ──────────────────────────────────────────── */
-@media (max-width: 680px) {
+/* ── RESPONSIVE ── */
+@media (max-width: 660px) {
   .shell { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 1rem 1.25rem; }
-  .sidebar-status { margin-top: 0; flex-direction: row; }
-  .main { padding: 1.25rem 1.25rem 3rem; }
-  .result-summary { grid-template-columns: 1fr 1fr; }
+  .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 1rem 1.2rem; gap: 0.85rem; }
+  .sidebar-bottom { margin-top: 0; flex-direction: row; }
+  .main { padding: 1.2rem 1.2rem 3rem; }
+  .stats-row { grid-template-columns: 1fr 1fr; }
 }
 </style>
 </head>
@@ -876,48 +649,42 @@ footer {
 <div class="shell">
 
   <!-- SIDEBAR -->
-  <nav class="sidebar">
+  <nav class="sidebar" aria-label="Progress navigation">
     <div class="logo">
       <div class="logo-icon">
-        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-          <path d="M8 1L2 4v4c0 3.3 2.4 6.4 6 7.2C11.6 14.4 14 11.3 14 8V4L8 1zm0 2.2l4 2v2.8c0 2.4-1.7 4.6-4 5.4-2.3-.8-4-3-4-5.4V5.2l4-2z"/>
-        </svg>
+        <svg viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.3 2.4 6.4 6 7.2C11.6 14.4 14 11.3 14 8V4L8 1zm0 2.2l4 2v2.8c0 2.4-1.7 4.6-4 5.4-2.3-.8-4-3-4-5.4V5.2l4-2z"/></svg>
       </div>
       <div class="logo-text">
         <div class="name">IaC Sentinel</div>
-        <div class="sub">Token Vault · AI Scanner</div>
+        <div class="sub">Token Vault · AI</div>
       </div>
     </div>
 
-    <div class="nav-steps">
-      <div class="nav-step active" id="step1">
-        <div class="nav-dot">1</div>
-        Login
+    <div class="nav-steps" role="list">
+      <div class="nav-step active" id="step1" role="listitem" aria-current="step">
+        <div class="nav-dot">1</div> Login
       </div>
-      <div class="nav-step" id="step2">
-        <div class="nav-dot">2</div>
-        Connect GitHub
+      <div class="nav-step" id="step2" role="listitem">
+        <div class="nav-dot">2</div> Connect GitHub
       </div>
-      <div class="nav-step" id="step3">
-        <div class="nav-dot">3</div>
-        Scan Repository
+      <div class="nav-step" id="step3" role="listitem">
+        <div class="nav-dot">3</div> Scan Repo
       </div>
-      <div class="nav-step" id="step4">
-        <div class="nav-dot">4</div>
-        Results
+      <div class="nav-step" id="step4" role="listitem">
+        <div class="nav-dot">4</div> Results
       </div>
     </div>
 
-    <div class="sidebar-status">
-      <div class="status-pill">
+    <div class="sidebar-bottom">
+      <div class="status-pill" role="status">
         <div class="status-dot" id="statusDot"></div>
         <span id="statusText">connecting...</span>
       </div>
-      <div id="userBadge" style="display:none" class="auth-pill">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M2 6.5L4.5 9L10 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <div id="userBadge" style="display:none" class="auth-pill" role="status">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+          <path d="M1.5 5.5L3.5 7.5L8.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <span>Authenticated</span>
+        <span>authenticated</span>
         <button onclick="logout()">sign out</button>
       </div>
     </div>
@@ -926,11 +693,12 @@ footer {
   <!-- MAIN -->
   <main class="main">
     <h1 class="page-title">Security Scanner</h1>
-    <p class="page-sub">Scan your Terraform & CloudFormation with AI-powered analysis via Auth0 Token Vault</p>
+    <p class="page-sub">Scan Terraform &amp; CloudFormation with AI-powered analysis via Auth0 Token Vault</p>
 
     <!-- CARD 1: AUTH -->
     <div class="card active" id="cardAuth">
-      <div class="card-head" onclick="toggleCard('cardAuth')">
+      <div class="card-head" onclick="toggleCard('cardAuth')" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')toggleCard('cardAuth')">
         <div class="card-title">
           <div class="card-active-dot"></div>
           Authentication
@@ -941,19 +709,16 @@ footer {
           <span class="card-chevron">▾</span>
         </div>
       </div>
-      <div class="card-body" id="cardAuthBody">
-        <p class="card-desc">
-          Sign in with your Auth0 account to begin. IaC Sentinel uses <strong>Auth0 Token Vault</strong> to securely store and retrieve your GitHub credentials — the agent never handles your tokens directly.
-        </p>
-        <button class="btn btn-primary" onclick="startLogin()" id="loginBtn">
-          Login with Auth0 →
-        </button>
+      <div class="card-body">
+        <p class="card-desc">Sign in with your Auth0 account. IaC Sentinel uses <strong>Auth0 Token Vault</strong> to store and retrieve your GitHub credentials — the agent never handles your tokens directly.</p>
+        <button class="btn btn-primary" onclick="startLogin()" id="loginBtn">Login with Auth0 →</button>
       </div>
     </div>
 
     <!-- CARD 2: CONNECT -->
     <div class="card locked" id="cardConnect">
-      <div class="card-head" onclick="toggleCard('cardConnect')">
+      <div class="card-head" onclick="toggleCard('cardConnect')" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')toggleCard('cardConnect')">
         <div class="card-title">
           <div class="card-active-dot"></div>
           Connect GitHub via Token Vault
@@ -963,27 +728,35 @@ footer {
           <span class="card-chevron">▾</span>
         </div>
       </div>
-      <div class="card-body" id="cardConnectBody">
-        <p class="card-desc">
-          Connect your GitHub account through Auth0's Token Vault. Auth0 stores the token securely — IaC Sentinel exchanges it at runtime so your credentials never leave Auth0's custody.
-        </p>
-        <button class="btn btn-primary" onclick="connectGithub()" id="connectBtn">
-          Connect GitHub →
-        </button>
+      <div class="card-body">
+        <p class="card-desc">Connect your GitHub account through Auth0's Token Vault. Clicking the button opens the authorization page in a new tab — come back here when you're done and it will complete automatically.</p>
+        <button class="btn btn-primary" onclick="connectGithub()" id="connectBtn">Connect GitHub →</button>
 
         <div class="connect-box" id="connectBox">
-          <div class="connect-box-label">↗ Authorization required</div>
-          <a href="#" id="connectUrl" class="connect-url" target="_blank" rel="noopener">—</a>
-          <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:0.85rem">
-            <button class="btn btn-primary" onclick="openConnectUrl()">Open Authorization Page ↗</button>
-            <span style="font-size:0.75rem;color:var(--ink3)">Opens GitHub OAuth in new tab</span>
+          <div class="connect-box-label">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+              <circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M5 3v2.5L6.5 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+            Waiting for GitHub authorization
           </div>
-          <div>
-            <div class="field-label" style="margin-bottom:0.4rem">Paste connect_code after authorizing</div>
-            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-              <input type="text" class="input" id="connectCodeInput" placeholder="connect_code from callback..." style="flex:1;min-width:200px">
-              <button class="btn btn-primary" onclick="completeConnect()">Complete →</button>
-            </div>
+          <p style="font-size:0.8rem; color:var(--text2); margin-bottom:0.75rem; line-height:1.55;">
+            A GitHub authorization page has opened in a new tab. Authorize the app there, then this page will update automatically. If the tab didn't open, use the button below.
+          </p>
+          <div style="display:flex; gap:0.65rem; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="openConnectUrl()" id="reopenBtn">Re-open authorization tab ↗</button>
+            <span id="waitingIndicator" style="display:flex;align-items:center;gap:0.35rem;font-size:0.72rem;color:var(--text3);font-family:var(--mono);">
+              <div class="spinner"></div> polling for completion...
+            </span>
+          </div>
+        </div>
+
+        <div id="githubConnectedNote" style="display:none">
+          <div class="success-note">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M2 7L5.5 10.5L12 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            GitHub connected to Token Vault — ready to scan
           </div>
         </div>
       </div>
@@ -991,7 +764,8 @@ footer {
 
     <!-- CARD 3: SCAN -->
     <div class="card locked" id="cardScan">
-      <div class="card-head" onclick="toggleCard('cardScan')">
+      <div class="card-head" onclick="toggleCard('cardScan')" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')toggleCard('cardScan')">
         <div class="card-title">
           <div class="card-active-dot"></div>
           Scan Repository
@@ -1003,18 +777,16 @@ footer {
           <span class="card-chevron">▾</span>
         </div>
       </div>
-      <div class="card-body" id="cardScanBody">
-        <p class="card-desc">
-          Point IaC Sentinel at any GitHub repository. The AI agent will fetch your Terraform and CloudFormation files using Token Vault credentials, run <strong>Checkov</strong> static analysis, then use <strong>DeepSeek</strong> to explain each finding and generate fix suggestions.
-        </p>
+      <div class="card-body">
+        <p class="card-desc"><strong>Grok-3-mini</strong> orchestrates the agent — fetching your IaC files via <strong>Token Vault</strong>, running <strong>Checkov</strong> static analysis, then delegating to <strong>DeepSeek</strong> to explain each finding and generate hardened fixes.</p>
         <div class="field-row" style="margin-bottom:1rem">
           <div class="field">
-            <div class="field-label">Repository Owner</div>
-            <input type="text" class="input" id="repoOwner" placeholder="e.g. nurusyda" value="nurusyda">
+            <label class="field-label" for="repoOwner">Owner</label>
+            <input type="text" class="input" id="repoOwner" placeholder="e.g. hashicorp">
           </div>
           <div class="field">
-            <div class="field-label">Repository Name</div>
-            <input type="text" class="input" id="repoName" placeholder="e.g. my-terraform-repo">
+            <label class="field-label" for="repoName">Repository</label>
+            <input type="text" class="input" id="repoName" placeholder="e.g. terraform-aws-modules">
           </div>
           <button class="btn btn-primary" onclick="startScan()" id="scanBtn" style="align-self:flex-end;flex-shrink:0">
             Run Scan →
@@ -1026,7 +798,7 @@ footer {
             <div class="spinner" id="scanSpinner"></div>
             <span id="scanStatusText">Initializing...</span>
           </div>
-          <div class="terminal" id="terminal"></div>
+          <div class="terminal" id="terminal" role="log" aria-label="Scan log"></div>
         </div>
       </div>
     </div>
@@ -1044,34 +816,64 @@ footer {
         </div>
       </div>
       <div class="card-body">
-        <!-- Summary stats -->
-        <div class="result-summary" id="resultSummary" style="display:none">
-          <div class="result-stat">
-            <div class="result-stat-label">High severity</div>
-            <div class="result-stat-value high" id="statHigh">—</div>
+
+        <!-- Summary sentence -->
+        <div class="results-summary-bar" id="resultSummary" style="display:none">
+          <span id="summaryText"></span>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-row" id="statsRow" style="display:none">
+          <div class="stat-box">
+            <div class="stat-label">High</div>
+            <div class="stat-value high" id="statHigh">—</div>
           </div>
-          <div class="result-stat">
-            <div class="result-stat-label">Medium severity</div>
-            <div class="result-stat-value amber" id="statMedium">—</div>
+          <div class="stat-box">
+            <div class="stat-label">Medium</div>
+            <div class="stat-value medium" id="statMedium">—</div>
           </div>
-          <div class="result-stat">
-            <div class="result-stat-label">Low severity</div>
-            <div class="result-stat-value low" id="statLow">—</div>
+          <div class="stat-box">
+            <div class="stat-label">Low</div>
+            <div class="stat-value low" id="statLow">—</div>
           </div>
         </div>
 
-        <div id="resultContent" class="result-prose"></div>
-
-        <div class="next-steps" id="nextSteps" style="display:none">
-          <div class="next-steps-title">What you can do next</div>
-          <div class="next-step"><div class="next-step-num">1</div><div><strong style="color:var(--ink)">Review the proposed fixes</strong> — the Terraform changes above are ready to copy into your repository.</div></div>
-          <div class="next-step"><div class="next-step-num">2</div><div><strong style="color:var(--ink)">Apply manually</strong> — copy the fixed code blocks and open a real PR on GitHub to remediate the issues.</div></div>
-          <div class="next-step"><div class="next-step-num">3</div><div><strong style="color:var(--ink)">Scan again</strong> — after applying fixes, run IaC Sentinel again to confirm all issues are resolved.</div></div>
-          <div class="next-step"><div class="next-step-num">4</div><div><strong style="color:var(--ink)">Scan other repos</strong> — click ↺ New Scan to check another repository in your organization.</div></div>
+        <!-- TABS -->
+        <div class="tabs" id="resultTabs" style="display:none">
+          <div class="tab active" id="tabFindings" onclick="switchTab('findings')">
+            findings <span class="tab-count" id="tabFindingsCount">0</span>
+          </div>
+          <div class="tab" id="tabFixes" onclick="switchTab('fixes')" style="display:none">
+            fixes <span class="tab-count" id="tabFixesCount">0</span>
+          </div>
+          <div class="tab" id="tabAudit" onclick="switchTab('audit')">
+            audit
+          </div>
         </div>
 
-        <div class="divider">Audit Trail</div>
-        <div id="auditLog"></div>
+        <!-- FINDINGS PANEL -->
+        <div class="tab-panel active" id="panelFindings">
+          <div class="sev-filters" id="sevFilters" style="display:none"></div>
+          <div id="findingsList"></div>
+        </div>
+
+        <!-- FIXES PANEL -->
+        <div class="tab-panel" id="panelFixes">
+          <p class="section-head">Proposed fixes — high severity only</p>
+          <div id="fixFilesList"></div>
+          <div class="next-steps" id="nextSteps">
+            <div class="next-steps-title">→ What you can do next</div>
+            <div class="next-step"><div class="next-step-num">1</div><div><strong style="color:var(--text)">Review the fixes</strong> — the Terraform above addresses all high-severity issues.</div></div>
+            <div class="next-step"><div class="next-step-num">2</div><div><strong style="color:var(--text)">Apply manually</strong> — copy the fixed blocks and open a real PR on GitHub.</div></div>
+            <div class="next-step"><div class="next-step-num">3</div><div><strong style="color:var(--text)">Scan again</strong> — confirm all issues are resolved after applying fixes.</div></div>
+          </div>
+        </div>
+
+        <!-- AUDIT PANEL -->
+        <div class="tab-panel" id="panelAudit">
+          <div id="auditList"></div>
+        </div>
+
       </div>
     </div>
 
@@ -1082,44 +884,20 @@ footer {
   </main>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="alert" aria-live="assertive"></div>
 
 <script>
-const S = { loggedIn: false, connectUrl: null, pollInterval: null };
+// ── STATE ──────────────────────────────────────────────────
+const S = {
+  loggedIn: false,
+  connectUrl: null,
+  pollInterval: null,
+  connectPollInterval: null,
+  activeFilters: new Set(['High','Medium','Low']),
+};
+const _termPrinted = new Set();
 
-// ── COPY HELPERS ─────────────────────────────────────────────────────────
-function copyCode(btn) {
-  const code = btn.dataset.code.replace(/&#39;/g,"'").replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
-  navigator.clipboard.writeText(code).then(() => {
-    btn.textContent = '✓ Copied';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ Copy'; btn.classList.remove('copied'); }, 2000);
-  }).catch(() => toast('Copy failed — try selecting manually', 'err'));
-}
-
-function copyFinding(btn) {
-  const text = btn.dataset.plain.replace(/&#39;/g,"'").replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
-  navigator.clipboard.writeText(text).then(() => {
-    btn.textContent = '✓ Copied';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = '⎘ Copy'; btn.classList.remove('copied'); }, 2000);
-  }).catch(() => toast('Copy failed', 'err'));
-}
-
-// ── CARD COLLAPSE ────────────────────────────────────────────────────────
-function toggleCard(id) {
-  const card = document.getElementById(id);
-  if (card.classList.contains('locked') || card.classList.contains('active')) return;
-  card.classList.toggle('collapsed');
-}
-
-function collapseCard(id) {
-  const card = document.getElementById(id);
-  card.classList.add('done-card', 'collapsed');
-  card.classList.remove('active');
-}
-
-// ── UTILS ─────────────────────────────────────────────────────────────────
+// ── UTILS ──────────────────────────────────────────────────
 function toast(msg, type = '') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -1131,11 +909,12 @@ function toast(msg, type = '') {
 function setStep(n) {
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById(`step${i}`);
-    el.classList.remove('active', 'done');
     const dot = el.querySelector('.nav-dot');
+    el.classList.remove('active','done');
+    el.removeAttribute('aria-current');
     if (i < n) { el.classList.add('done'); dot.textContent = '✓'; }
-    else { dot.textContent = i; }
-    if (i === n) el.classList.add('active');
+    else dot.textContent = i;
+    if (i === n) { el.classList.add('active'); el.setAttribute('aria-current','step'); }
   }
 }
 
@@ -1145,7 +924,24 @@ function unlock(id) {
   c.classList.add('active');
 }
 
-function term(text, cls = 't-text') {
+function collapseCard(id) {
+  const card = document.getElementById(id);
+  card.classList.add('done-card','collapsed');
+  card.classList.remove('active','locked');
+}
+
+function toggleCard(id) {
+  const card = document.getElementById(id);
+  if (card.classList.contains('locked') || card.classList.contains('active')) return;
+  const isCollapsed = card.classList.toggle('collapsed');
+  const head = card.querySelector('.card-head');
+  if (head) head.setAttribute('aria-expanded', String(!isCollapsed));
+}
+
+function term(text, cls = 't-text', key = null) {
+  const k = key || text;
+  if (_termPrinted.has(k)) return;
+  _termPrinted.add(k);
   const t = document.getElementById('terminal');
   const d = document.createElement('div');
   d.className = 't-line';
@@ -1154,176 +950,48 @@ function term(text, cls = 't-text') {
   t.scrollTop = t.scrollHeight;
 }
 
-// ── MARKDOWN RENDERER ─────────────────────────────────────────────────────
-function renderMarkdown(text) {
-  // Extract fenced code blocks first
-  const codeBlocks = {};
-  let blockIdx = 0;
-  // Extract ### Fixed: <filename> headings — replace with a placeholder immediately before the code
-  const fixLabels = {};
-  text = text.replace(/### Fixed:\s*`?([^\n`]+)`?\s*\n([ \t]*\n)*/g, (_, fname) => {
-    const lkey = `\x00FIXLABEL_${Object.keys(fixLabels).length}\x00`;
-    fixLabels[lkey] = fname.trim();
-    return lkey;
-  });
-
-  text = text.replace(/```[\w]*\n([\s\S]*?)```/g, (full, code) => {
-    const key = `\x00CODE${blockIdx++}\x00`;
-    const escaped = code.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const raw = code.replace(/'/g,"&#39;").replace(/"/g,'&quot;');
-    codeBlocks[key] = { escaped, raw, fname: null };
-    return key;
-  });
-
-  // Now resolve filenames: each FIXLABEL is replaced by its code block that follows
-  Object.entries(fixLabels).forEach(([lkey, fname]) => {
-    const after = text.slice(text.indexOf(lkey) + lkey.length).trim();
-    const m = after.match(/^\x00(CODE\d+)\x00/);
-    if (m) {
-      const ckey = `\x00${m[1]}\x00`;
-      if (codeBlocks[ckey]) codeBlocks[ckey].fname = fname;
-    }
-    text = text.split(lkey).join('');
-  });
-
-  // Serialize codeBlocks to HTML strings
-  Object.entries(codeBlocks).forEach(([key, val]) => {
-    if (typeof val === 'object') {
-      const fname = val.fname || 'fixed code';
-      codeBlocks[key] = `<div class="fix-block"><div class="fix-block-header"><span>${fname}</span><button class="copy-btn" onclick="copyCode(this)" data-code="${val.raw}">⎘ Copy</button></div><pre>${val.escaped}</pre></div>`;
-    }
-  });
-
-  // Find severity markers
-  const fullRe = /\[(?:Severity:\s*)?(High|Medium|Low)\]/gi;
-  const positions = [];
-  let m;
-  while ((m = fullRe.exec(text)) !== null) {
-    positions.push({ idx: m.index, end: m.index + m[0].length, sev: m[1].toLowerCase() });
-  }
-
-  if (positions.length === 0) {
-    return renderPlain(text, codeBlocks);
-  }
-
-  let html = renderPlain(text.slice(0, positions[0].idx), codeBlocks);
-
-  for (let i = 0; i < positions.length; i++) {
-    const { end, sev } = positions[i];
-    const nextIdx = i + 1 < positions.length ? positions[i + 1].idx : text.length;
-    const block = text.slice(end, nextIdx);
-
-    const sevClass = sev === 'high' ? 'sev-high' : sev === 'medium' ? 'sev-medium' : 'sev-low';
-    const sevLabel = sev.charAt(0).toUpperCase() + sev.slice(1);
-
-    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const rawHead = (lines[0] || '').replace(/^\s*[-•]\s*/,'').replace(/\*\*(.+?)\*\*/g,'$1').replace(/^Resource:\s*/i,'').trim();
-
-    // Split "resource_name — description" into two parts
-    const dashIdx = rawHead.indexOf(' — ');
-    let headName, headDesc;
-    if (dashIdx !== -1) {
-      headName = rawHead.slice(0, dashIdx).trim();
-      headDesc = rawHead.slice(dashIdx + 3).trim();
-    } else {
-      const altIdx = rawHead.indexOf(' - ');
-      if (altIdx !== -1) {
-        headName = rawHead.slice(0, altIdx).trim();
-        headDesc = rawHead.slice(altIdx + 3).trim();
-      } else {
-        headName = rawHead;
-        headDesc = '';
-      }
-    }
-
-    let risk = '', fix = '';
-    const extras = [];
-    const bodyCodeBlocks = [];
-    for (const line of lines.slice(1)) {
-      if (line.startsWith('\x00CODE') && line.endsWith('\x00')) {
-        bodyCodeBlocks.push(line);
-        continue;
-      }
-      const clean = line.replace(/^\s*[-•›]\s*/,'').replace(/\*\*(.+?)\*\*/g,'$1').trim();
-      if (!clean) continue;
-      if (/^Why it'?s risky:?\s*/i.test(clean)) risk = clean.replace(/^Why it'?s risky:?\s*/i,'');
-      else if (/^Fix:?\s*/i.test(clean)) fix = clean.replace(/^Fix:?\s*/i,'');
-      else extras.push(clean);
-    }
-
-    const plainLines = [`[${sevLabel.toUpperCase()}] ${headName}${headDesc ? ' — ' + headDesc : ''}`, risk?`Risk: ${risk}`:'', fix?`Fix: ${fix}`:'', ...extras].filter(Boolean);
-    const plainEncoded = plainLines.join('\n').replace(/'/g,"&#39;").replace(/"/g,'&quot;');
-
-    const fmt = s => s.replace(/`([^`]+)`/g,'<code class="inline-code">$1</code>');
-
-    const headlineHtml = headDesc
-      ? `<span class="finding-headline"><span class="finding-headline-name">${headName}</span><span class="finding-headline-desc">${headDesc}</span></span>`
-      : `<span class="finding-headline"><span class="finding-headline-name">${headName}</span></span>`;
-
-    const bodyRows = [
-      risk ? `<div class="finding-row"><span class="finding-label risk">Risk</span><span class="finding-text">${fmt(risk)}</span></div>` : '',
-      fix  ? `<div class="finding-row"><span class="finding-label fix">Fix</span><span class="finding-text">${fmt(fix)}</span></div>`  : '',
-      ...extras.map(e => `<div class="finding-row"><span class="finding-text" style="padding-left:4rem">${e}</span></div>`),
-      ...bodyCodeBlocks.map(key => codeBlocks[key] || ''),
-      `<button class="finding-copy" onclick="copyFinding(this)" data-plain="${plainEncoded}">⎘ Copy finding</button>`,
-    ].filter(Boolean).join('');
-
-    html += `<details class="finding">
-<summary><span class="finding-sev ${sevClass}">${sevLabel}</span>${headlineHtml}<span class="finding-chevron">▾</span></summary>
-<div class="finding-body">${bodyRows}</div>
-</details>`;
-  }
-
-  Object.entries(codeBlocks).forEach(([key, val]) => { html = html.split(key).join(val); });
-  return html;
+function termForce(text, cls = 't-text') {
+  const t = document.getElementById('terminal');
+  const d = document.createElement('div');
+  d.className = 't-line';
+  d.innerHTML = `<span class="t-prompt">$</span><span class="${cls}">${text}</span>`;
+  t.appendChild(d);
+  t.scrollTop = t.scrollHeight;
 }
 
-function renderPlain(text, codeBlocks) {
-  if (!text || !text.trim()) return '';
-  text = text.replace(/`([^`]+)`/g,'<code class="inline-code">$1</code>');
-  text = text.replace(/^#{4,}\s+(.+)$/gm,'<div class="section-head" style="font-size:0.88rem">$1</div>');
-  text = text.replace(/^### (.+)$/gm,'<div class="section-head">$1</div>');
-  text = text.replace(/^## (.+)$/gm,'<div class="section-head" style="font-size:1.05rem">$1</div>');
-  text = text.replace(/^# (.+)$/gm,'<div class="section-head" style="font-size:1.15rem">$1</div>');
-  text = text.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
-  text = text.replace(/^\s*[-•]\s+(.+)$/gm,'<div style="display:flex;gap:0.5rem;padding:0.1rem 0"><span style="color:var(--accent);flex-shrink:0">›</span><span>$1</span></div>');
-  text = text.replace(/\n/g,'<br>');
-  text = text.replace(/(<br>\s*){3,}/g,'<br><br>');
-  if (codeBlocks) Object.entries(codeBlocks).forEach(([key, val]) => { text = text.split(key).join(val); });
-  return text;
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-// Count severities and update stats strip
-function updateStats(html) {
-  const highCount   = (html.match(/class="finding-sev sev-high"/g)   || []).length;
-  const mediumCount = (html.match(/class="finding-sev sev-medium"/g) || []).length;
-  const lowCount    = (html.match(/class="finding-sev sev-low"/g)    || []).length;
-
-  if (highCount + mediumCount + lowCount > 0) {
-    document.getElementById('statHigh').textContent   = highCount;
-    document.getElementById('statMedium').textContent = mediumCount;
-    document.getElementById('statLow').textContent    = lowCount;
-    document.getElementById('resultSummary').style.display = 'grid';
-  }
+function fmtInline(s) {
+  return escHtml(s).replace(/`([^`]+)`/g, '<code class="ic">$1</code>');
 }
 
-// ── HEALTH ────────────────────────────────────────────────────────────────
+// ── TABS ───────────────────────────────────────────────────
+function switchTab(name) {
+  ['findings','fixes','audit'].forEach(n => {
+    document.getElementById('tab' + n.charAt(0).toUpperCase() + n.slice(1))?.classList.remove('active');
+    document.getElementById('panel' + n.charAt(0).toUpperCase() + n.slice(1))?.classList.remove('active');
+  });
+  document.getElementById('tab' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+  document.getElementById('panel' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+}
+
+// ── HEALTH ─────────────────────────────────────────────────
 async function checkHealth() {
   try {
     const r = await fetch('/health');
     const d = await r.json();
-    const dot = document.getElementById('statusDot');
-    const txt = document.getElementById('statusText');
     if (d.status === 'healthy') {
-      dot.classList.add('live');
-      txt.textContent = `online · vault ${d.token_vault}`;
+      document.getElementById('statusDot').classList.add('live');
+      document.getElementById('statusText').textContent = `online · vault ${d.token_vault}`;
     }
   } catch {
     document.getElementById('statusText').textContent = 'offline';
   }
 }
 
-// ── AUTH ──────────────────────────────────────────────────────────────────
+// ── AUTH ───────────────────────────────────────────────────
 async function startLogin() {
   const btn = document.getElementById('loginBtn');
   btn.disabled = true;
@@ -1369,7 +1037,20 @@ async function logout() {
   location.reload();
 }
 
-// ── CONNECT GITHUB ────────────────────────────────────────────────────────
+async function checkSession() {
+  const btn = document.getElementById('loginBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Checking...'; }
+  try {
+    const r = await fetch('/audit', { credentials: 'include' });
+    if (r.ok) { S.loggedIn = true; setLoggedIn(); return; }
+  } catch {}
+  if (btn && !S.loggedIn) { btn.disabled = false; btn.innerHTML = 'Login with Auth0 →'; }
+}
+
+// ── GITHUB CONNECT ─────────────────────────────────────────
+// Opens auth in a NEW TAB. The callback page at /callback writes
+// iac_connect_code to localStorage (shared across same-origin tabs),
+// then closes itself. The poll loop here picks it up automatically.
 async function connectGithub() {
   const btn = document.getElementById('connectBtn');
   btn.disabled = true;
@@ -1387,15 +1068,16 @@ async function connectGithub() {
     localStorage.setItem('iac_auth_session', d.auth_session);
     S.connectUrl = d.connect_url;
 
-    const box = document.getElementById('connectBox');
-    const link = document.getElementById('connectUrl');
-    box.classList.add('show');
-    link.href = d.connect_url;
-    link.textContent = d.connect_url;
+    // Open in NEW TAB — user stays on this page
+    window.open(d.connect_url, '_blank', 'noopener');
 
-    btn.innerHTML = '↺ Reconnect';
+    document.getElementById('connectBox').classList.add('show');
+    btn.innerHTML = '↺ Re-open tab';
     btn.disabled = false;
-    toast('Open the authorization URL to connect GitHub');
+    btn.onclick = openConnectUrl;
+
+    // Start polling for GitHub connection completion
+    startConnectPoll();
   } catch (e) {
     toast(e.message || 'Connection failed', 'err');
     btn.disabled = false;
@@ -1404,46 +1086,118 @@ async function connectGithub() {
 }
 
 function openConnectUrl() {
-  if (S.connectUrl) window.open(S.connectUrl, '_blank');
+  if (S.connectUrl) window.open(S.connectUrl, '_blank', 'noopener');
 }
 
-async function completeConnect(autoCode = null) {
-  const code = autoCode || document.getElementById('connectCodeInput').value.trim();
+// ── PATCH 1: startConnectPoll — read from localStorage, not sessionStorage ──
+// localStorage is shared across all tabs on the same origin, so the value
+// written by the self-closing /callback page is visible here immediately.
+function startConnectPoll() {
+  if (S.connectPollInterval) clearInterval(S.connectPollInterval);
+  S.connectPollInterval = setInterval(async () => {
+    try {
+      // Check if callback tab stored connect_code in localStorage
+      const code    = localStorage.getItem('iac_connect_code');
+      const session = localStorage.getItem('iac_auth_session');
+
+      if (code && session) {
+        clearInterval(S.connectPollInterval);
+        S.connectPollInterval = null;
+        localStorage.removeItem('iac_connect_code'); // consume it
+        await finishConnect(session, code);
+        return;
+      }
+
+      // Fallback: poll /connect/status directly
+      const r = await fetch('/connect/status', { credentials: 'include' });
+      if (r.ok) {
+        const data = await r.json();
+        const accounts = data.accounts || data;
+        const hasGh = Array.isArray(accounts) && accounts.some(a => a.connection === 'github');
+        if (hasGh) {
+          clearInterval(S.connectPollInterval);
+          S.connectPollInterval = null;
+          onGithubConnected();
+        }
+      }
+    } catch {}
+  }, 2000);
+}
+
+async function completeConnect(autoCode) {
+  const code    = autoCode || document.getElementById('connectCodeInput')?.value?.trim();
   const session = localStorage.getItem('iac_auth_session');
-  if (!code)    { toast('Paste the connect_code first', 'err'); return; }
-  if (!session) { toast('No auth session — click Connect GitHub first', 'err'); return; }
+  if (!code || !session) return;
+  await finishConnect(session, code);
+}
 
-  const btn = document.querySelector('[onclick="completeConnect()"]');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>'; }
-
+async function finishConnect(session, code) {
+  document.getElementById('waitingIndicator').innerHTML = '<div class="spinner"></div> Completing...';
   try {
     const r = await fetch('/connect/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auth_session: session, connect_code: code, redirect_uri: window.location.origin + '/callback' }),
+      body: JSON.stringify({
+        auth_session: session,
+        connect_code: code,
+        redirect_uri: window.location.origin + '/callback',
+      }),
       credentials: 'include',
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || 'Failed to complete');
-
-    // Only remove auth_session from localStorage on success.
-    // On failure it is preserved so the user can retry without
-    // having to click "Connect GitHub" again.
+    if (!r.ok) throw new Error(d.detail || 'Failed');
     localStorage.removeItem('iac_auth_session');
-    document.getElementById('connectBox').classList.remove('show');
+    onGithubConnected();
+  } catch (e) {
+    toast(e.message || 'Could not complete connection', 'err');
+    document.getElementById('waitingIndicator').innerHTML = '<div class="spinner"></div> polling...';
+  }
+}
+
+function onGithubConnected() {
+  document.getElementById('connectBox').classList.remove('show');
+  document.getElementById('githubConnectedNote').style.display = 'block';
+  document.getElementById('connectBtn').style.display = 'none';
+  if (S.connectPollInterval) { clearInterval(S.connectPollInterval); S.connectPollInterval = null; }
+  setTimeout(() => {
     collapseCard('cardConnect');
     unlock('cardScan');
     setStep(3);
     toast('GitHub connected to Token Vault!', 'ok');
-  } catch (e) {
-    // Do NOT remove iac_auth_session on failure — preserve it so the
-    // user can retry the completion step without re-initiating the flow.
-    toast(e.message || 'Complete failed — please try again', 'err');
-    if (btn) { btn.disabled = false; btn.innerHTML = 'Complete →'; }
+  }, 1200);
+}
+
+// ── PATCH 2: handleCallback — read from localStorage, not sessionStorage ──
+// When the OAuth callback redirects back to the MAIN window (not a new tab),
+// we still need to pick up iac_connect_code from localStorage.
+async function handleCallback() {
+  const p           = new URLSearchParams(window.location.search);
+  const code        = p.get('code');
+  const connectCode = p.get('connect_code');
+  if (!code && !connectCode) return;
+  window.history.replaceState({}, '', '/');
+
+  if (connectCode) {
+    // Store in localStorage so the poll loop (in any tab) can find it.
+    // If this IS the main window, finishConnect() runs immediately below.
+    localStorage.setItem('iac_connect_code', connectCode);
+    S.loggedIn = true;
+    setLoggedIn();
+    // If this is the main tab (not a popup), complete immediately
+    const session = localStorage.getItem('iac_auth_session');
+    if (session) {
+      localStorage.removeItem('iac_connect_code'); // consume before finishConnect reads it
+      await finishConnect(session, connectCode);
+    }
+    return;
+  }
+
+  if (code) {
+    await exchangeCode(code);
   }
 }
 
-// ── SCAN ──────────────────────────────────────────────────────────────────
+// ── SCAN ───────────────────────────────────────────────────
 async function startScan() {
   const owner = document.getElementById('repoOwner').value.trim();
   const name  = document.getElementById('repoName').value.trim();
@@ -1453,14 +1207,15 @@ async function startScan() {
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner"></div> Scanning...';
 
+  document.getElementById('cardResults').style.display = 'none';
   document.getElementById('scanProgress').style.display = 'block';
   document.getElementById('terminal').innerHTML = '';
   document.getElementById('scanStatusText').textContent = 'Agent starting...';
-
+  _termPrinted.clear();
   if (S.pollInterval) { clearInterval(S.pollInterval); S.pollInterval = null; }
 
-  term(`fetch_iac_files("${owner}", "${name}")`, 't-info');
-  term('Exchanging credentials via Token Vault...', 't-text');
+  term(`fetch_iac_files("${owner}", "${name}")`, 't-info', 'fetch_start');
+  term('Exchanging credentials via Token Vault...', 't-text', 'vault_exchange');
 
   try {
     const r = await fetch('/act', {
@@ -1473,39 +1228,49 @@ async function startScan() {
     if (!r.ok) throw new Error(d.detail || 'Failed to start');
     pollResult(d.job_id);
   } catch (e) {
-    term(`Error: ${e.message}`, 't-err');
+    termForce(`Error: ${e.message}`, 't-err');
     btn.disabled = false;
     btn.innerHTML = 'Run Scan →';
     document.getElementById('scanStatusText').textContent = 'Failed';
   }
 }
 
-const POLL_MSGS = [
-  ['✓ Token Vault exchange successful', 't-ok'],
-  ['GitHub files retrieved — parsing IaC...', 't-text'],
-  ['Running Checkov static analysis...', 't-warn'],
-  ['Checkov complete — found misconfigurations', 't-warn'],
-  ['DeepSeek analyzing each vulnerability...', 't-text'],
-  ['Generating remediation code...', 't-text'],
-  ['Building diff preview...', 't-ok'],
+const AUDIT_TERM_MAP = {
+  FETCH_IAC:  ['✓ Token Vault exchange successful — files retrieved', 't-ok'],
+  AI_SCAN:    ['✓ Checkov + DeepSeek analysis complete', 't-ok'],
+  DRY_RUN_PR: ['✓ Fix diff preview generated', 't-ok'],
+};
+const PROGRESS_MSGS = [
+  [2,  'Running Checkov static analysis...', 't-warn'],
+  [4,  'DeepSeek analyzing vulnerabilities...', 't-text'],
+  [7,  'Generating remediation code...', 't-text'],
+  [11, 'Building diff preview...', 't-text'],
 ];
 
 function pollResult(jobId) {
   let pollCount = 0;
   S.pollInterval = setInterval(async () => {
+    pollCount++;
     try {
       const r = await fetch(`/result/${jobId}`, { credentials: 'include' });
       const d = await r.json();
 
-      if (pollCount < POLL_MSGS.length) {
-        term(...POLL_MSGS[pollCount]);
-        document.getElementById('scanStatusText').textContent = POLL_MSGS[pollCount][0].replace('✓ ', '');
-        pollCount++;
+      if (d.recent_audit) {
+        d.recent_audit.forEach(ev => {
+          const mapped = AUDIT_TERM_MAP[ev.action];
+          if (mapped) term(mapped[0], mapped[1], `audit:${ev.action}:${ev.timestamp}`);
+        });
       }
+      PROGRESS_MSGS.forEach(([at, msg, cls]) => {
+        if (pollCount === at) term(msg, cls, `progress:${at}`);
+      });
+
+      document.getElementById('scanStatusText').textContent =
+        d.status === 'running' ? 'Scanning...' : d.status;
 
       if (d.status === 'done') {
         clearInterval(S.pollInterval); S.pollInterval = null;
-        term('Scan complete', 't-ok');
+        termForce('Scan complete ✓', 't-ok');
         document.getElementById('scanSpinner').style.display = 'none';
         document.getElementById('scanStatusText').textContent = 'Complete';
         document.getElementById('scanBtn').disabled = false;
@@ -1513,109 +1278,283 @@ function pollResult(jobId) {
         showResults(d);
       } else if (d.status === 'error') {
         clearInterval(S.pollInterval); S.pollInterval = null;
-        term(`Error: ${d.error}`, 't-err');
-        if (d.instructions) term(d.instructions, 't-warn');
+        termForce(`Error: ${d.error}`, 't-err');
+        if (d.instructions) termForce(d.instructions, 't-warn');
         document.getElementById('scanBtn').disabled = false;
         document.getElementById('scanBtn').innerHTML = 'Run Scan →';
         document.getElementById('scanStatusText').textContent = 'Failed';
       }
-    } catch { /* keep polling */ }
+    } catch {}
   }, 3000);
 }
 
+// ── PARSE ──────────────────────────────────────────────────
+function parseFindings(text) {
+  if (!text || !text.trim()) return [];
+  const SEV_RE = /^\[(High|Medium|Low)\]/i;
+  const lines  = text.split('\n');
+  const blocks = [];
+  let cur = null;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    const sevM = line.match(SEV_RE);
+    if (sevM) {
+      if (cur) blocks.push(cur);
+      const rest  = line.slice(sevM[0].length).trim();
+      const dash  = rest.indexOf(' — ');
+      const dash2 = rest.indexOf(' - ');
+      let resource = '', desc = '';
+      if (dash !== -1)  { resource = rest.slice(0, dash).trim();  desc = rest.slice(dash + 3).trim(); }
+      else if (dash2 !== -1) { resource = rest.slice(0, dash2).trim(); desc = rest.slice(dash2 + 3).trim(); }
+      else                   { desc = rest; }
+      cur = { sev: sevM[1], resource, desc, risk: '', fix: '' };
+    } else if (cur) {
+      if (/^-\s*Why it.?s risky:?\s*/i.test(line)) cur.risk = line.replace(/^-\s*Why it.?s risky:?\s*/i,'').trim();
+      else if (/^-\s*Fix:?\s*/i.test(line))          cur.fix  = line.replace(/^-\s*Fix:?\s*/i,'').trim();
+    }
+  }
+  if (cur) blocks.push(cur);
+  return blocks;
+}
+
+function parseFixBlocks(text) {
+  if (!text || !text.trim()) return [];
+  const blocks = [];
+  const parts  = text.split(/^### Fixed:\s*/m).filter(Boolean);
+  for (const part of parts) {
+    const nl   = part.indexOf('\n');
+    if (nl === -1) continue;
+    const path = part.slice(0, nl).trim();
+    const rest = part.slice(nl + 1);
+    const codeM = rest.match(/^```[\w]*\n([\s\S]*?)```/m);
+    if (!codeM) continue;
+    blocks.push({ path, code: codeM[1] });
+  }
+  return blocks;
+}
+
+// ── RENDER ─────────────────────────────────────────────────
 function showResults(data) {
   setStep(4);
   const card = document.getElementById('cardResults');
   card.style.display = 'block';
   card.classList.add('active');
 
-  const html = renderMarkdown(data.response);
-  document.getElementById('resultContent').innerHTML = html;
-  updateStats(html);
-  document.getElementById('nextSteps').style.display = 'block';
+  const findings  = parseFindings(data.findings_text || '');
+  const fixBlocks = parseFixBlocks(data.fix_blocks || '');
+  const summary   = data.summary || '';
 
-  const audit = document.getElementById('auditLog');
-  audit.innerHTML = '';
-  (data.recent_audit || []).forEach(ev => {
-    const now = new Date();
-    const ts  = new Date(ev.timestamp);
-    const sameDay = ts.toDateString() === now.toDateString();
-    const time = sameDay
-      ? ts.toLocaleTimeString()
-      : ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + ts.toLocaleTimeString();
-    const row = document.createElement('div');
-    row.className = 'audit-row';
-    row.innerHTML = `
-      <span class="audit-time">${time}</span>
-      <span class="audit-badge ${ev.action}">${ev.action}</span>
-      <span class="audit-detail">${ev.details || '—'}</span>
-      <span class="audit-target">${ev.target !== 'Internal' ? ev.target : ''}</span>
-    `;
-    audit.appendChild(row);
-  });
+  // Summary bar
+  if (summary) {
+    document.getElementById('summaryText').textContent = summary;
+    document.getElementById('resultSummary').style.display = 'flex';
+  }
+
+  // Stats
+  const high   = findings.filter(f => f.sev.toLowerCase() === 'high').length;
+  const medium = findings.filter(f => f.sev.toLowerCase() === 'medium').length;
+  const low    = findings.filter(f => f.sev.toLowerCase() === 'low').length;
+  if (high + medium + low > 0) {
+    document.getElementById('statHigh').textContent   = high;
+    document.getElementById('statMedium').textContent = medium;
+    document.getElementById('statLow').textContent    = low;
+    document.getElementById('statsRow').style.display = 'grid';
+  }
+
+  // Tabs
+  document.getElementById('resultTabs').style.display = 'flex';
+  document.getElementById('tabFindingsCount').textContent = findings.length;
+
+  if (fixBlocks.length) {
+    document.getElementById('tabFixes').style.display = 'flex';
+    document.getElementById('tabFixesCount').textContent = fixBlocks.length;
+  }
+
+  // Render findings
+  renderFindings(findings);
+
+  // Render fix blocks
+  renderFixBlocks(fixBlocks);
+
+  // Audit
+  renderAudit(data.recent_audit || []);
 
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+function renderFindings(findings) {
+  const list = document.getElementById('findingsList');
+  list.innerHTML = '';
+
+  if (!findings.length) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">✓</div>
+      <div class="empty-title">No security issues detected</div>
+      <div class="empty-sub">IaC Sentinel found no misconfigurations in this repository.</div>
+    </div>`;
+    return;
+  }
+
+  // Filter buttons
+  const filtersEl = document.getElementById('sevFilters');
+  filtersEl.innerHTML = '';
+  const counts = { High: 0, Medium: 0, Low: 0 };
+  findings.forEach(f => counts[f.sev] = (counts[f.sev]||0) + 1);
+  S.activeFilters = new Set(['High','Medium','Low']);
+
+  ['High','Medium','Low'].forEach(sev => {
+    if (!counts[sev]) return;
+    const btn = document.createElement('button');
+    btn.className = `sev-filter ${sev.toLowerCase()}`;
+    btn.dataset.sev = sev;
+    btn.innerHTML = `<span>${counts[sev]}</span> ${sev}`;
+    btn.onclick = () => {
+      if (S.activeFilters.has(sev)) S.activeFilters.delete(sev);
+      else S.activeFilters.add(sev);
+      btn.classList.toggle('off');
+      document.querySelectorAll('.finding').forEach(el => {
+        el.classList.toggle('hidden', !S.activeFilters.has(el.dataset.sev));
+      });
+    };
+    filtersEl.appendChild(btn);
+  });
+  filtersEl.style.display = 'flex';
+
+  // Finding accordions
+  findings.forEach((f, i) => {
+    const sevLower = f.sev.toLowerCase();
+    const sevClass = `sev-${sevLower}`;
+    const el = document.createElement('details');
+    el.className = 'finding';
+    el.dataset.sev = f.sev;
+
+    const plainText = [
+      `[${f.sev.toUpperCase()}]${f.resource ? ' ' + f.resource : ''}${f.desc ? ' — ' + f.desc : ''}`,
+      f.risk ? `Risk: ${f.risk}` : '',
+      f.fix  ? `Fix: ${f.fix}`  : '',
+    ].filter(Boolean).join('\n');
+    const plainEnc = escHtml(plainText);
+
+    const bodyRows = [
+      f.risk ? `<div class="finding-row"><span class="finding-label risk">Risk</span><span class="finding-text">${fmtInline(f.risk)}</span></div>` : '',
+      f.fix  ? `<div class="finding-row"><span class="finding-label fix">Fix</span><span class="finding-text">${fmtInline(f.fix)}</span></div>` : '',
+      `<button class="copy-btn-light" onclick="event.stopPropagation();copyFinding(this,'${plainEnc.replace(/'/g,'&#39;')}')">⎘ copy finding</button>`,
+    ].filter(Boolean).join('');
+
+    el.innerHTML = `<summary>
+      <span class="finding-sev ${sevClass}">${escHtml(f.sev)}</span>
+      <span class="finding-headline">
+        ${f.resource ? `<span class="finding-resource">${escHtml(f.resource)}</span>` : ''}
+        <span class="finding-desc">${escHtml(f.desc)}</span>
+      </span>
+      <span class="finding-chevron">▾</span>
+    </summary>
+    <div class="finding-body">${bodyRows}</div>`;
+
+    list.appendChild(el);
+  });
+}
+
+function renderFixBlocks(fixBlocks) {
+  const container = document.getElementById('fixFilesList');
+  container.innerHTML = '';
+  if (!fixBlocks.length) return;
+
+  fixBlocks.forEach((fb, i) => {
+    const uid     = `fix-code-${i}`;
+    const escaped = fb.code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const rawEnc  = escHtml(fb.code);
+
+    const el = document.createElement('div');
+    el.className = 'fix-block';
+    el.innerHTML = `
+      <div class="fix-block-header">
+        <span>${escHtml(fb.path)}</span>
+        <button class="copy-btn" id="${uid}-btn" onclick="copyFixCode('${uid}', this)">⎘ copy</button>
+      </div>
+      <pre id="${uid}">${escaped}</pre>
+    `;
+    container.appendChild(el);
+  });
+}
+
+function renderAudit(entries) {
+  const list = document.getElementById('auditList');
+  list.innerHTML = '';
+  if (!entries.length) {
+    list.innerHTML = '<p style="font-size:0.8rem;color:var(--text3);font-family:var(--mono);padding:0.5rem 0;">No audit events recorded.</p>';
+    return;
+  }
+  const now = new Date();
+  entries.forEach(ev => {
+    const ts      = new Date(ev.timestamp);
+    const sameDay = ts.toDateString() === now.toDateString();
+    const time    = sameDay
+      ? ts.toLocaleTimeString()
+      : ts.toLocaleDateString(undefined, { month:'short', day:'numeric' }) + ' ' + ts.toLocaleTimeString();
+    const row = document.createElement('div');
+    row.className = 'audit-entry';
+    row.innerHTML = `
+      <span class="audit-time">${time}</span>
+      <span class="audit-badge ${escHtml(ev.action)}">${escHtml(ev.action)}</span>
+      <span class="audit-detail">${escHtml(ev.details || '—')}</span>
+      <span class="audit-target">${ev.target !== 'Internal' ? escHtml(ev.target) : ''}</span>
+    `;
+    list.appendChild(row);
+  });
+}
+
+// ── COPY ───────────────────────────────────────────────────
+function copyFinding(btn, plainEnc) {
+  const text = plainEnc.replace(/&#39;/g,"'").replace(/&quot;/g,'"').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⎘ copy finding'; btn.classList.remove('copied'); }, 2000);
+  }).catch(() => toast('Copy failed', 'err'));
+}
+
+function copyFixCode(uid, btn) {
+  const el = document.getElementById(uid);
+  if (!el) return;
+  navigator.clipboard.writeText(el.innerText).then(() => {
+    btn.textContent = '✓ copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⎘ copy'; btn.classList.remove('copied'); }, 2000);
+  }).catch(() => toast('Copy failed', 'err'));
+}
+
+// ── RESET ──────────────────────────────────────────────────
 function resetScan() {
   document.getElementById('cardResults').style.display = 'none';
   document.getElementById('scanProgress').style.display = 'none';
   document.getElementById('scanBtn').disabled = false;
   document.getElementById('scanBtn').innerHTML = 'Run Scan →';
+  document.getElementById('statsRow').style.display = 'none';
   document.getElementById('resultSummary').style.display = 'none';
+  document.getElementById('resultTabs').style.display = 'none';
+  document.getElementById('tabFixes').style.display = 'none';
+  document.getElementById('findingsList').innerHTML = '';
+  document.getElementById('fixFilesList').innerHTML = '';
+  document.getElementById('auditList').innerHTML = '';
+  document.getElementById('sevFilters').style.display = 'none';
+  _termPrinted.clear();
   if (S.pollInterval) { clearInterval(S.pollInterval); S.pollInterval = null; }
+  // Reset tabs
+  switchTab('findings');
   setStep(3);
 }
 
-// ── CALLBACK ──────────────────────────────────────────────────────────────
-async function handleCallback() {
-  const p = new URLSearchParams(window.location.search);
-  const code = p.get('code');
-  const connectCode = p.get('connect_code');
-
-  if (code) {
-    window.history.replaceState({}, '', '/');
-    await exchangeCode(code);
-  } else if (connectCode) {
-    window.history.replaceState({}, '', '/');
-    const inp = document.getElementById('connectCodeInput');
-    if (inp) inp.value = connectCode;
-    S.loggedIn = true;
-    setLoggedIn();
-    document.getElementById('connectBox').classList.add('show');
-    toast('Completing GitHub connection...', 'ok');
-    await completeConnect(connectCode);
-  }
-}
-
-async function checkSession() {
-  const loginBtn = document.getElementById('loginBtn');
-  if (loginBtn) {
-    loginBtn.disabled = true;
-    loginBtn.innerHTML = '<div class="spinner"></div> Checking session...';
-  }
-  try {
-    const r = await fetch('/audit', { credentials: 'include' });
-    if (r.ok) {
-      S.loggedIn = true;
-      setLoggedIn();
-      return;
-    }
-  } catch { /* not authenticated */ }
-
-  if (loginBtn && !S.loggedIn) {
-    loginBtn.disabled = false;
-    loginBtn.innerHTML = 'Login with Auth0 →';
-  }
-}
-
-// ── INIT ──────────────────────────────────────────────────────────────────
+// ── INIT ───────────────────────────────────────────────────
 (async () => {
   await checkHealth();
   await handleCallback();
   if (!S.loggedIn) await checkSession();
+  // If we returned from connect flow in the SAME window, resume polling
   if (localStorage.getItem('iac_auth_session') && S.loggedIn) {
     document.getElementById('connectBox').classList.add('show');
+    startConnectPoll();
   }
 })();
 </script>
