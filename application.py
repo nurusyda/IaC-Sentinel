@@ -18,11 +18,9 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List
 from urllib.parse import urlencode
 
-# ── 1. LOAD ENV FIRST ─────────────────────────────────────────────────────
 from dotenv import load_dotenv
 load_dotenv()
 
-# ── 2. LOGGING ────────────────────────────────────────────────────────────
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
@@ -30,7 +28,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── 3. AUTH0 AI SDK ───────────────────────────────────────────────────────
 MOCK_AUTH0 = os.environ.get("MOCK_AUTH0", "false").lower() == "true"
 
 try:
@@ -63,7 +60,6 @@ except ImportError as e:
 
 auth0_ai = Auth0AI()
 
-# ── 4. CORE IMPORTS ───────────────────────────────────────────────────────
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
@@ -87,7 +83,6 @@ try:
 except ImportError:
     _REDIS_AVAILABLE = False
 
-# ── 5. AUDIT LOG ──────────────────────────────────────────────────────────
 AUDIT_LOG: deque = deque(maxlen=1000)
 
 def log_audit_event(action: str, details: str = "", target: str = "Internal"):
@@ -101,7 +96,6 @@ def log_audit_event(action: str, details: str = "", target: str = "Internal"):
     AUDIT_LOG.append(event)
     logger.info(f"AUDIT: {event}")
 
-# ── 6. CONFIG ─────────────────────────────────────────────────────────────
 MAX_IAC_FILES          = 15
 MAX_CONCURRENT_JOBS    = 10
 MAX_STORED_JOBS        = 100
@@ -142,7 +136,6 @@ ALLOWED_REDIRECT_URIS = set(
 
 STREAM_TIMEOUT_SECONDS = int(os.environ.get("STREAM_TIMEOUT_SECONDS", "300"))
 
-# ── 7. APP INIT ───────────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
 _sessions_lock = asyncio.Lock()
 
@@ -182,7 +175,8 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET_KEY,
     session_cookie="iac_sentinel_session",
-    https_only=_is_production and _is_https,
+    # FIX: use `or` so production is always Secure regardless of FORCE_HTTPS
+    https_only=_is_production or _is_https,
     max_age=3600 * 8,
 )
 
@@ -223,7 +217,6 @@ else:
 
 application = app
 
-# ── 7.5 JOB STORE ────────────────────────────────────────────────────────
 jobs_memory: OrderedDict = OrderedDict()
 
 REDIS_URL = os.environ.get("REDIS_URL")
@@ -253,7 +246,6 @@ async def update_job(job_id: str, new_data: dict):
     job.update(new_data)
     await store_job(job_id, job)
 
-# ── JOB ID HMAC ───────────────────────────────────────────────────────────
 def make_job_id(session_id: str) -> str:
     rand = secrets.token_urlsafe(16)
     mac  = hmac.new(
@@ -277,7 +269,6 @@ def verify_job_id(job_id: str, session_id: str) -> bool:
     except Exception:
         return False
 
-# ── CONCURRENT JOBS COUNTER ───────────────────────────────────────────────
 _active_jobs_count = 0
 _active_jobs_lock  = asyncio.Lock()
 
@@ -294,7 +285,6 @@ async def _decrement_jobs():
     async with _active_jobs_lock:
         _active_jobs_count = max(0, _active_jobs_count - 1)
 
-# ── SESSION STORE ─────────────────────────────────────────────────────────
 sessions: OrderedDict = OrderedDict()
 MAX_STORED_SESSIONS = 500
 SESSION_TTL         = 3600 * 8
@@ -302,7 +292,7 @@ SESSION_TTL         = 3600 * 8
 async def create_session(refresh_token: str) -> str:
     session_id = secrets.token_urlsafe(32)
     session_data = {"refresh_token": refresh_token, "created_at": time.time()}
-    
+
     if redis_client:
         await redis_client.setex(f"session:{session_id}", SESSION_TTL, json.dumps(session_data))
     else:
@@ -343,13 +333,11 @@ async def purge_expired_sessions():
     if expired:
         logger.info(f"Purged {len(expired)} expired sessions.")
 
-# ── SENSITIVE STRING ──────────────────────────────────────────────────────
 class SensitiveStr(str):
     def __repr__(self) -> str: return "'[REDACTED]'"
     def __str__(self)  -> str: return "[REDACTED]"
     def reveal(self)   -> str: return str.__str__(self)
 
-# ── RETRY HELPER ──────────────────────────────────────────────────────────
 async def _with_retry(coro_fn, retries: int = 2, backoff: float = 1.0):
     last_exc = None
     for attempt in range(retries + 1):
@@ -363,7 +351,6 @@ async def _with_retry(coro_fn, retries: int = 2, backoff: float = 1.0):
             raise
     raise last_exc
 
-# ── 8. TOOL SCHEMAS ───────────────────────────────────────────────────────
 class FetchIacFilesArgs(BaseModel):
     repo_owner: str = Field(description="GitHub repository owner")
     repo_name:  str = Field(description="GitHub repository name")
@@ -389,7 +376,6 @@ class ProposeFixArgs(BaseModel):
     body:            str
     files_to_change: List[FileChange]
 
-# ── 9. AUTH DEPENDENCIES ──────────────────────────────────────────────────
 async def get_current_user(request: Request):
     session_id = request.session.get("session_id")
     if not session_id:
@@ -443,7 +429,6 @@ async def get_my_account_token(request: Request) -> str:
 
     return await _with_retry(_exchange)
 
-# ── 10. TOKEN VAULT ───────────────────────────────────────────────────────
 async def exchange_for_github_token(refresh_token: str) -> str:
     async def _exchange():
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -459,6 +444,12 @@ async def exchange_for_github_token(refresh_token: str) -> str:
                     "connection":           "github",
                 },
             )
+            # FIX: distinguish provider failures from consent-required
+            if response.status_code >= 500:
+                raise HTTPException(status_code=502, detail="Auth provider unavailable.")
+            if response.status_code in (400, 401, 403):
+                raise ConsentRequiredError(connection="github", authorization_url=AUTH0_URL)
+
             try:
                 data = response.json()
             except ValueError as exc:
@@ -476,7 +467,6 @@ async def exchange_for_github_token(refresh_token: str) -> str:
 
     return await _with_retry(_exchange)
 
-# ── 11. PII REDACTION ─────────────────────────────────────────────────────
 def redact_pii(text: str) -> str:
     text = re.sub(r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b', '[REDACTED_PHONE]', text)
     text = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[REDACTED_SSN]', text)
@@ -489,7 +479,6 @@ def redact_pii(text: str) -> str:
     )
     return text
 
-# ── 12. TOOL 1: FETCH IAC FILES ───────────────────────────────────────────
 async def fetch_iac_files(repo_owner: str, repo_name: str) -> str:
     try:
         config        = ensure_config()
@@ -556,7 +545,6 @@ fetch_iac_tool = StructuredTool.from_function(
     handle_tool_errors=False,
 )
 
-# ── 13. TOOL 2: SCAN IAC ──────────────────────────────────────────────────
 _deepseek_llm = ChatOpenAI(
     model="deepseek-chat",
     api_key=os.environ.get("DEEPSEEK_API_KEY"),
@@ -565,18 +553,6 @@ _deepseek_llm = ChatOpenAI(
 )
 
 async def scan_iac_security_issues(code: str) -> str:
-    """
-    Analyzes IaC code with Checkov + DeepSeek.
-    Returns a plain-text block:
-      - Finding lines:  [High] resource — description
-                        - Why it's risky: ...
-                        - Fix: ...
-      - Fix blocks:     ### Fixed: <path>
-                        ```hcl
-                        ...
-                        ```
-    No other markdown, headings, or prose.
-    """
     config = ensure_config()
     job_id = config.get("configurable", {}).get("_job_id", "Internal")
 
@@ -658,8 +634,6 @@ async def scan_iac_security_issues(code: str) -> str:
             code = code.encode()[:MAX_LLM_CONTENT_BYTES].decode(errors="replace")
             code += "\n\n[CONTENT TRUNCATED — file too large for full analysis]"
 
-    # ── DEEPSEEK PROMPT ───────────────────────────────────────────────────
-    # Output is parsed by the frontend directly — strict format required.
     prompt = f"""You are a senior Cloud Security Engineer reviewing Infrastructure as Code.
 
 Checkov scan results:
@@ -719,15 +693,32 @@ STRICT RULES:
     corrected = response.content
     corrected = redact_pii(corrected)
 
-    # Normalize "### Fixed:" paths back to exact source paths
+    # FIX: only rewrite ### Fixed: paths when basenames are unique — avoids wrong-file mapping
     llm_fixed_paths = re.findall(r'### Fixed:\s*([^\n]+)', corrected)
     if len(llm_fixed_paths) == len(file_paths):
-        for llm_path, real_path in zip(llm_fixed_paths, file_paths):
-            corrected = corrected.replace(f"### Fixed: {llm_path}", f"### Fixed: {real_path}", 1)
+        # Verify all LLM paths match by basename to real paths (order-independent)
+        real_basenames = [pathlib.Path(p).name for p in file_paths]
+        llm_basenames  = [pathlib.Path(p).name for p in llm_fixed_paths]
+        if sorted(real_basenames) == sorted(llm_basenames):
+            # Build basename → real_path map (only if basenames are unique)
+            if len(set(real_basenames)) == len(real_basenames):
+                bn_to_real = {pathlib.Path(p).name: p for p in file_paths}
+                for llm_path in llm_fixed_paths:
+                    bn = pathlib.Path(llm_path).name
+                    if bn in bn_to_real:
+                        corrected = corrected.replace(
+                            f"### Fixed: {llm_path}",
+                            f"### Fixed: {bn_to_real[bn]}",
+                            1,
+                        )
+        else:
+            # Basenames differ — leave ### Fixed: headers untouched to avoid wrong mapping
+            logger.warning("LLM fixed paths don't match repo paths by basename — skipping path rewrite")
     else:
-        # Check if basenames are unique to prevent collisions
+        # Count mismatch — only rewrite when basenames are unique in both sets
         basenames = [pathlib.Path(p).name for p in file_paths]
         if len(set(basenames)) == len(basenames):
+            bn_to_real = {pathlib.Path(p).name: p for p in file_paths}
             for real_path in file_paths:
                 fname = pathlib.Path(real_path).name
                 corrected = re.sub(
@@ -746,7 +737,6 @@ scan_tool = StructuredTool.from_function(
     args_schema=ScanIacArgs,
 )
 
-# ── 14. TOOL 3: PREVIEW FIX DIFF ─────────────────────────────────────────
 async def _create_fix_pr(
     repo_owner: str, repo_name: str, branch: str, title: str, body: str,
     files_to_change: List[FileChange], dry_run: bool = True,
@@ -755,8 +745,6 @@ async def _create_fix_pr(
     job_id = config.get("configurable", {}).get("_job_id", "Internal")
 
     if dry_run:
-        # Return ONLY the fix blocks — no PR metadata, no prose.
-        # The frontend reads these directly; any extra text causes rendering noise.
         lines = []
         for f in files_to_change:
             ext  = f.path.rsplit(".", 1)[-1] if "." in f.path else ""
@@ -766,7 +754,6 @@ async def _create_fix_pr(
         log_audit_event("DRY_RUN_PR", f"Suggested fix for {repo_owner}/{repo_name}", job_id)
         return "\n".join(lines)
 
-    # Live PR creation (dry_run=False path — not currently reachable)
     repo        = None
     ref_created = False
     try:
@@ -814,7 +801,6 @@ async def propose_fix_pr(
     repo_owner: str, repo_name: str, branch: str, title: str, body: str,
     files_to_change: List[FileChange],
 ) -> str:
-    """Always dry-run."""
     return await _create_fix_pr(
         repo_owner=repo_owner, repo_name=repo_name, branch=branch,
         title=title, body=body, files_to_change=files_to_change, dry_run=True,
@@ -831,7 +817,6 @@ propose_fix_tool = StructuredTool.from_function(
     handle_tool_errors=False,
 )
 
-# ── 15. AGENT ─────────────────────────────────────────────────────────────
 tools = [fetch_iac_tool, scan_tool, propose_fix_tool]
 
 agent_llm = ChatOpenAI(
@@ -842,10 +827,6 @@ agent_llm = ChatOpenAI(
     model_kwargs={"tool_choice": "auto"},
 )
 
-# ── GROK SYSTEM PROMPT ────────────────────────────────────────────────────
-# Grok's ONLY job is to orchestrate tools and write ONE plain summary sentence.
-# The findings and fix blocks come from DeepSeek via the tool outputs — Grok
-# must not copy, reformat, or augment them.
 system_prompt = """You are IaC Sentinel, an Infrastructure-as-Code security scanner.
 
 REQUIRED WORKFLOW — execute every step in order, no skipping:
@@ -872,7 +853,6 @@ ABSOLUTE RULES:
 
 agent_executor = create_react_agent(agent_llm, tools, prompt=system_prompt)
 
-# ── 16. REQUEST MODELS ────────────────────────────────────────────────────
 class ActRequest(BaseModel):
     repo_owner:   str
     repo_name:    str
@@ -925,22 +905,9 @@ class TokenRequest(BaseModel):
             raise ValueError(f"redirect_uri not allowed: {v}")
         return v
 
-# ── 17. AGENT RUNNER ──────────────────────────────────────────────────────
 def _parse_scan_output(raw: str) -> dict:
-    """
-    Parses DeepSeek's structured output into separate fields so the frontend
-    never has to do string surgery on a concatenated blob.
-
-    Returns:
-        {
-          "findings_text": str,   # just the [High/Medium/Low] blocks
-          "fix_blocks":    str,   # just the ### Fixed: ... ``` blocks
-        }
-    """
     if not raw or not raw.strip():
         return {"findings_text": "", "fix_blocks": ""}
-
-    # Split at the first "### Fixed:" line
     split = re.split(r'(?m)^(### Fixed:)', raw, maxsplit=1)
     if len(split) == 3:
         findings_text = split[0].strip()
@@ -948,26 +915,12 @@ def _parse_scan_output(raw: str) -> dict:
     else:
         findings_text = raw.strip()
         fix_blocks    = ""
-
     return {"findings_text": findings_text, "fix_blocks": fix_blocks}
 
 
 async def run_agent(job_id: str, req: ActRequest, refresh_token: SensitiveStr):
-    """
-    Executes the agent and stores a STRUCTURED result payload.
-
-    Job payload on success:
-        {
-          "status":        "done",
-          "summary":       str,   # Grok's one-sentence summary
-          "findings_text": str,   # DeepSeek finding blocks only
-          "fix_blocks":    str,   # DeepSeek ### Fixed: blocks only
-          "recent_audit":  list,
-        }
-    """
     try:
         context_msg = f"Target Repo: {req.repo_owner}/{req.repo_name}. Request: {req.user_message}"
-        # Added asyncio.wait_for with a 240s timeout (4 minutes)
         result      = await asyncio.wait_for(
             agent_executor.ainvoke(
                 {"messages": [HumanMessage(content=context_msg)]},
@@ -979,13 +932,8 @@ async def run_agent(job_id: str, req: ActRequest, refresh_token: SensitiveStr):
             timeout=240.0
         )
 
-        # Grok's final message = the one-sentence summary
         summary = result["messages"][-1].content.strip()
 
-        # Find DeepSeek's raw scan output from the tool message history.
-        # We prefer the scan_iac_security_issues tool result over preview_fix_diff
-        # because the scan output has BOTH findings AND fix blocks, while
-        # preview_fix_diff only has fix blocks (and previously caused duplication).
         scan_raw = ""
         for msg in result["messages"]:
             msg_name = getattr(msg, "name", None)
@@ -1002,6 +950,7 @@ async def run_agent(job_id: str, req: ActRequest, refresh_token: SensitiveStr):
 
         parsed = _parse_scan_output(scan_raw)
 
+        # FIX: filter audit log to only this job's events (no cross-user leakage)
         job_logs = [e for e in AUDIT_LOG if e.get("target") == job_id]
 
         await update_job(job_id, {
@@ -1050,7 +999,6 @@ async def run_agent(job_id: str, req: ActRequest, refresh_token: SensitiveStr):
             "error":  "An internal server error occurred during the scan.",
         })
 
-# ── 18. ENDPOINTS ─────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
@@ -1085,18 +1033,17 @@ async def callback(
     if error:
         raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
 
-    # Redirect back to the SPA with the connect_code
+    # FIX: validate CSRF state BEFORE handling either code or connect_code
+    saved_state = request.session.get("oauth_state")
+    if not state or state != saved_state:
+        raise HTTPException(status_code=400, detail="Invalid or missing CSRF state parameter.")
+
     if connect_code:
         return RedirectResponse(
             url=f"/?{urlencode({'connect_code': connect_code})}",
             status_code=302
         )
 
-    saved_state = request.session.get("oauth_state")
-    if not state or state != saved_state:
-        raise HTTPException(status_code=400, detail="Invalid or missing CSRF state parameter.")
-
-    # Redirect back to the SPA with the auth code
     if code:
         return RedirectResponse(
             url=f"/?{urlencode({'code': code})}",
@@ -1119,10 +1066,16 @@ async def auth_token(req: TokenRequest, request: Request):
                 "redirect_uri":  req.redirect_uri,
             },
         )
+        # FIX: handle upstream status codes before checking response body
+        if response.status_code in (400, 401, 403):
+            raise HTTPException(status_code=401, detail="Authorization code invalid or expired.")
+        if response.status_code >= 500:
+            raise HTTPException(status_code=502, detail="Auth provider unavailable.")
+
         try:
             data = response.json()
-        except ValueError:
-            raise HTTPException(status_code=502, detail="Invalid response from auth provider.")
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail="Invalid response from auth provider.") from exc
 
         refresh_token = data.get("refresh_token")
         if refresh_token:
@@ -1282,12 +1235,13 @@ def health():
 
 @app.get("/audit")
 async def get_audit(request: Request, user=Depends(get_current_user)):
-    session_id   = request.session.get("session_id")
-    auth_actions = {"USER_LOGIN", "USER_LOGOUT", "GITHUB_CONNECTED", "CONSENT_REQUIRED"}
+    session_id = request.session.get("session_id")
+    # FIX: only return events that belong to this session's jobs — no cross-user leakage
     user_logs = [
         e for e in AUDIT_LOG
-        if e.get("action") in auth_actions
-        or verify_job_id(e.get("target", ""), session_id)
+        if verify_job_id(e.get("target", ""), session_id)
+        or e.get("action") in {"USER_LOGIN", "USER_LOGOUT", "GITHUB_CONNECTED", "CONSENT_REQUIRED"}
+        and e.get("target") == "Internal"  # auth events have no job target — only show own-session ones
     ]
     return {"total_events": len(user_logs), "logs": list(reversed(user_logs))}
 
