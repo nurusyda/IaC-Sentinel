@@ -36,4 +36,5 @@ reproducibility/
 branch_protection_rules.json
 github_conf/
 *.sh
+!deploy.sh
 cookies.txt
