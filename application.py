@@ -16,6 +16,7 @@ from collections import deque, OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Dict, Any, List
+from urllib.parse import urlencode
 
 # ── 1. LOAD ENV FIRST ─────────────────────────────────────────────────────
 from dotenv import load_dotenv
@@ -65,7 +66,7 @@ auth0_ai = Auth0AI()
 # ── 4. CORE IMPORTS ───────────────────────────────────────────────────────
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -174,11 +175,14 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+_is_production = os.environ.get("ENVIRONMENT", "development") == "production"
+_is_https      = os.environ.get("FORCE_HTTPS", "false").lower() == "true"
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET_KEY,
     session_cookie="iac_sentinel_session",
-    https_only=os.environ.get("ENVIRONMENT", "development") == "production",
+    https_only=_is_production and _is_https,
     max_age=3600 * 8,
 )
 
@@ -295,19 +299,25 @@ sessions: OrderedDict = OrderedDict()
 MAX_STORED_SESSIONS = 500
 SESSION_TTL         = 3600 * 8
 
-def _session_create_sync(refresh_token: str) -> str:
+async def create_session(refresh_token: str) -> str:
     session_id = secrets.token_urlsafe(32)
-    sessions[session_id] = {"refresh_token": refresh_token, "created_at": time.time()}
-    while len(sessions) > MAX_STORED_SESSIONS:
-        sessions.popitem(last=False)
-        log_audit_event("SESSION_EVICTED", f"Oldest session evicted (cap={MAX_STORED_SESSIONS})")
+    session_data = {"refresh_token": refresh_token, "created_at": time.time()}
+    
+    if redis_client:
+        await redis_client.setex(f"session:{session_id}", SESSION_TTL, json.dumps(session_data))
+    else:
+        async with _sessions_lock:
+            sessions[session_id] = session_data
+            while len(sessions) > MAX_STORED_SESSIONS:
+                sessions.popitem(last=False)
+                log_audit_event("SESSION_EVICTED", f"Oldest session evicted (cap={MAX_STORED_SESSIONS})")
     return session_id
 
-async def create_session(refresh_token: str) -> str:
-    async with _sessions_lock:
-        return _session_create_sync(refresh_token)
-
 async def get_session(session_id: str) -> dict | None:
+    if redis_client:
+        raw = await redis_client.get(f"session:{session_id}")
+        return json.loads(raw) if raw else None
+
     async with _sessions_lock:
         s = sessions.get(session_id)
         if not s:
@@ -318,8 +328,11 @@ async def get_session(session_id: str) -> dict | None:
         return s
 
 async def delete_session(session_id: str):
-    async with _sessions_lock:
-        sessions.pop(session_id, None)
+    if redis_client:
+        await redis_client.delete(f"session:{session_id}")
+    else:
+        async with _sessions_lock:
+            sessions.pop(session_id, None)
 
 async def purge_expired_sessions():
     now = time.time()
@@ -712,13 +725,16 @@ STRICT RULES:
         for llm_path, real_path in zip(llm_fixed_paths, file_paths):
             corrected = corrected.replace(f"### Fixed: {llm_path}", f"### Fixed: {real_path}", 1)
     else:
-        for real_path in file_paths:
-            fname = pathlib.Path(real_path).name
-            corrected = re.sub(
-                r'### Fixed:\s*[^\n]*' + re.escape(fname),
-                f"### Fixed: {real_path}",
-                corrected,
-            )
+        # Check if basenames are unique to prevent collisions
+        basenames = [pathlib.Path(p).name for p in file_paths]
+        if len(set(basenames)) == len(basenames):
+            for real_path in file_paths:
+                fname = pathlib.Path(real_path).name
+                corrected = re.sub(
+                    r'### Fixed:\s*[^\n]*' + re.escape(fname),
+                    f"### Fixed: {real_path}",
+                    corrected,
+                )
 
     log_audit_event("AI_SCAN", "Hybrid Checkov + LLM analysis completed", job_id)
     return corrected
@@ -982,12 +998,14 @@ async def run_agent(job_id: str, req: ActRequest, refresh_token: SensitiveStr):
 
         parsed = _parse_scan_output(scan_raw)
 
+        job_logs = [e for e in AUDIT_LOG if e.get("target") == job_id]
+
         await update_job(job_id, {
             "status":        "done",
             "summary":       summary,
             "findings_text": parsed["findings_text"],
             "fix_blocks":    parsed["fix_blocks"],
-            "recent_audit":  list(AUDIT_LOG)[-5:],
+            "recent_audit":  job_logs[-5:],
         })
 
     except ConsentRequiredError as e:
@@ -1056,16 +1074,23 @@ async def callback(
     if error:
         raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
 
+    # Redirect back to the SPA with the connect_code
     if connect_code:
-        return {"connect_code": connect_code,
-                "instructions": "POST to /connect/complete with auth_session and connect_code"}
+        return RedirectResponse(
+            url=f"/?{urlencode({'connect_code': connect_code})}",
+            status_code=302
+        )
 
     saved_state = request.session.get("oauth_state")
     if not state or state != saved_state:
         raise HTTPException(status_code=400, detail="Invalid or missing CSRF state parameter.")
 
+    # Redirect back to the SPA with the auth code
     if code:
-        return {"code": code, "instructions": "POST this code to /auth/token"}
+        return RedirectResponse(
+            url=f"/?{urlencode({'code': code})}",
+            status_code=302
+        )
 
     return {"message": "Callback received but no code found"}
 

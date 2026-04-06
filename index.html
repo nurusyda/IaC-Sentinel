@@ -942,10 +942,21 @@ function term(text, cls = 't-text', key = null) {
   const k = key || text;
   if (_termPrinted.has(k)) return;
   _termPrinted.add(k);
+  
   const t = document.getElementById('terminal');
   const d = document.createElement('div');
   d.className = 't-line';
-  d.innerHTML = `<span class="t-prompt">$</span><span class="${cls}">${text}</span>`;
+  
+  const promptSpan = document.createElement('span');
+  promptSpan.className = 't-prompt';
+  promptSpan.textContent = '$ ';
+  
+  const textSpan = document.createElement('span');
+  textSpan.className = cls;
+  textSpan.textContent = text; 
+  
+  d.appendChild(promptSpan);
+  d.appendChild(textSpan);
   t.appendChild(d);
   t.scrollTop = t.scrollHeight;
 }
@@ -954,7 +965,17 @@ function termForce(text, cls = 't-text') {
   const t = document.getElementById('terminal');
   const d = document.createElement('div');
   d.className = 't-line';
-  d.innerHTML = `<span class="t-prompt">$</span><span class="${cls}">${text}</span>`;
+  
+  const promptSpan = document.createElement('span');
+  promptSpan.className = 't-prompt';
+  promptSpan.textContent = '$ ';
+  
+  const textSpan = document.createElement('span');
+  textSpan.className = cls;
+  textSpan.textContent = text; 
+  
+  d.appendChild(promptSpan);
+  d.appendChild(textSpan);
   t.appendChild(d);
   t.scrollTop = t.scrollHeight;
 }
@@ -1253,6 +1274,7 @@ function pollResult(jobId) {
     pollCount++;
     try {
       const r = await fetch(`/result/${jobId}`, { credentials: 'include' });
+      if (!r.ok) throw new Error(`HTTP Error ${r.status}`);
       const d = await r.json();
 
       if (d.recent_audit) {
@@ -1283,8 +1305,17 @@ function pollResult(jobId) {
         document.getElementById('scanBtn').disabled = false;
         document.getElementById('scanBtn').innerHTML = 'Run Scan →';
         document.getElementById('scanStatusText').textContent = 'Failed';
+        document.getElementById('scanSpinner').style.display = 'none';
       }
-    } catch {}
+    } catch (e) {
+      // Fail fast on network/HTTP errors
+      clearInterval(S.pollInterval); S.pollInterval = null;
+      termForce(`Network/Auth Error: ${e.message}`, 't-err');
+      document.getElementById('scanBtn').disabled = false;
+      document.getElementById('scanBtn').innerHTML = 'Run Scan →';
+      document.getElementById('scanStatusText').textContent = 'Failed';
+      document.getElementById('scanSpinner').style.display = 'none';
+    }
   }, 3000);
 }
 
@@ -1531,6 +1562,7 @@ function resetScan() {
   document.getElementById('scanProgress').style.display = 'none';
   document.getElementById('scanBtn').disabled = false;
   document.getElementById('scanBtn').innerHTML = 'Run Scan →';
+  document.getElementById('scanSpinner').style.display = 'inline-block';
   document.getElementById('statsRow').style.display = 'none';
   document.getElementById('resultSummary').style.display = 'none';
   document.getElementById('resultTabs').style.display = 'none';
