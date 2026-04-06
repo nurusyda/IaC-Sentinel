@@ -1,0 +1,1704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IaC Sentinel — AI Security Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:         #f5f3ee;
+  --surface:    #faf9f6;
+  --surface2:   #f0ede6;
+  --surface3:   #e8e4da;
+  --border:     rgba(60,50,30,0.11);
+  --border2:    rgba(60,50,30,0.20);
+  --accent:     #1a4731;
+  --green-dim:  rgba(26,71,49,0.08);
+  --green-mid:  rgba(26,71,49,0.18);
+  --red:        #8b1a1a;
+  --red-dim:    rgba(139,26,26,0.07);
+  --amber:      #7a4a00;
+  --amber-dim:  rgba(122,74,0,0.08);
+  --blue:       #1a3a6b;
+  --blue-dim:   rgba(26,58,107,0.08);
+  --text:       #1c1a16;
+  --text2:      #5a5444;
+  --text3:      #9a9082;
+  --mono:       'DM Mono', monospace;
+  --serif:      'Fraunces', serif;
+  --sans:       'Plus Jakarta Sans', sans-serif;
+  --r:          7px;
+  --r2:         13px;
+  --sidebar-w:  232px;
+  --shadow:     0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.04);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.65;
+  min-height: 100vh;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 1.75rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.logo { display: flex; align-items: flex-start; gap: 0.55rem; }
+
+.logo-icon {
+  width: 30px; height: 30px;
+  background: var(--accent);
+  border-radius: var(--r);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 2px;
+}
+.logo-icon svg { width: 14px; height: 14px; fill: #fff; }
+
+.logo-text .name {
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.logo-text .sub {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-top: 0.1rem;
+}
+
+.nav-steps { display: flex; flex-direction: column; gap: 2px; }
+
+.nav-step {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--r);
+  font-size: 0.8rem;
+  color: var(--text3);
+  user-select: none;
+  font-family: var(--sans);
+  transition: all 0.15s;
+}
+.nav-step.active {
+  background: var(--green-dim);
+  color: var(--accent);
+  font-weight: 600;
+  border: 1px solid var(--green-mid);
+}
+.nav-step.done { color: var(--text2); }
+.nav-step.done:hover { background: var(--surface2); cursor: pointer; }
+
+.nav-dot {
+  width: 19px; height: 19px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono);
+  font-size: 0.58rem; font-weight: 500;
+  flex-shrink: 0;
+}
+.nav-step.active .nav-dot,
+.nav-step.done .nav-dot {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+
+.sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 0.45rem; }
+
+.status-pill {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-family: var(--mono); font-size: 0.62rem;
+  color: var(--text3); letter-spacing: 0.05em;
+  padding: 0.3rem 0.55rem;
+  background: var(--surface2);
+  border-radius: 100px;
+  border: 1px solid var(--border);
+}
+.status-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--text3); flex-shrink: 0;
+  transition: background 0.3s;
+}
+.status-dot.live { background: var(--accent); animation: pulse 2.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+.auth-pill {
+  display: flex; align-items: center; gap: 0.45rem;
+  font-size: 0.72rem; color: var(--accent);
+  background: var(--green-dim);
+  border: 1px solid var(--green-mid);
+  border-radius: var(--r);
+  padding: 0.38rem 0.7rem;
+  font-weight: 500;
+}
+.auth-pill button {
+  background: none; border: none; cursor: pointer;
+  font-size: 0.67rem; color: var(--text3);
+  margin-left: auto; font-family: var(--mono);
+  padding: 0.1rem 0.2rem; border-radius: 3px;
+  transition: color 0.15s;
+}
+.auth-pill button:hover { color: var(--red); }
+
+.main {
+  padding: 2.25rem 2.25rem 4rem;
+  max-width: 760px;
+}
+
+.page-title {
+  font-family: var(--serif);
+  font-size: 1.65rem; font-weight: 400;
+  color: var(--text); letter-spacing: -0.02em;
+  margin-bottom: 0.25rem; line-height: 1.2;
+}
+.page-sub {
+  font-size: 0.85rem; color: var(--text3);
+  margin-bottom: 1.75rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  margin-bottom: 0.9rem;
+  box-shadow: var(--shadow);
+  transition: border-color 0.2s, opacity 0.2s;
+  overflow: hidden;
+}
+.card.locked { opacity: 0.42; pointer-events: none; }
+.card.active { border-color: var(--accent); box-shadow: var(--shadow-md); }
+.card.collapsed .card-body { display: none; }
+.card.collapsed { opacity: 0.62; box-shadow: none; }
+.card.collapsed .card-head { border-bottom: none; }
+
+.card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.9rem 1.15rem;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+.card.done-card .card-head { cursor: pointer; }
+.card.done-card .card-head:hover { background: var(--bg); }
+
+.card-title {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.85rem; font-weight: 600; color: var(--text);
+}
+.card-active-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--border2); flex-shrink: 0; transition: background 0.2s;
+}
+.card.active .card-active-dot { background: var(--accent); }
+
+.card-meta { display: flex; gap: 0.35rem; align-items: center; }
+
+.card-chevron {
+  font-size: 0.58rem; color: var(--text3);
+  transition: transform 0.2s; margin-left: 0.2rem;
+}
+.card.collapsed .card-chevron { transform: rotate(-90deg); }
+
+.card-body { padding: 1.35rem 1.15rem; }
+
+.card-desc {
+  font-size: 0.855rem; color: var(--text2);
+  line-height: 1.7; margin-bottom: 1.15rem;
+}
+
+.tag {
+  display: inline-flex; align-items: center;
+  padding: 0.16rem 0.5rem; border-radius: 4px;
+  font-family: var(--mono); font-size: 0.58rem;
+  font-weight: 500; letter-spacing: 0.08em;
+  text-transform: uppercase; border: 1px solid transparent;
+}
+.tag-green { background: var(--green-dim); color: var(--accent); border-color: var(--green-mid); }
+.tag-amber { background: var(--amber-dim); color: var(--amber); }
+.tag-blue  { background: var(--blue-dim);  color: var(--blue); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.52rem 1.05rem;
+  border-radius: var(--r);
+  font-family: var(--sans); font-size: 0.82rem; font-weight: 600;
+  cursor: pointer; border: none; outline: none;
+  transition: all 0.15s ease;
+  white-space: nowrap; letter-spacing: -0.01em;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #225c3e; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(26,71,49,0.22); }
+.btn-primary:disabled { background: var(--surface2); color: var(--text3); cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-outline { background: transparent; color: var(--text2); border: 1px solid var(--border2); }
+.btn-outline:hover { border-color: var(--text2); color: var(--text); }
+.btn-sm { padding: 0.28rem 0.65rem; font-size: 0.72rem; }
+
+.field { display: flex; flex-direction: column; gap: 0.28rem; flex: 1; }
+.field-label {
+  font-family: var(--mono); font-size: 0.6rem;
+  color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase;
+}
+.input {
+  background: var(--bg); border: 1px solid var(--border2);
+  border-radius: var(--r); color: var(--text);
+  font-family: var(--mono); font-size: 0.8rem;
+  padding: 0.58rem 0.8rem; outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s; width: 100%;
+}
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(26,71,49,0.09); }
+.input::placeholder { color: var(--text3); }
+.field-row { display: flex; gap: 0.7rem; align-items: flex-end; flex-wrap: wrap; }
+
+.connect-box {
+  display: none; background: #fdf6e8;
+  border: 1px solid rgba(122,74,0,0.2);
+  border-radius: var(--r); padding: 1rem;
+  margin-top: 1.15rem;
+}
+.connect-box.show { display: block; animation: fadeUp 0.2s ease; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+
+.connect-box-label {
+  font-family: var(--mono); font-size: 0.62rem; font-weight: 500;
+  color: var(--amber); letter-spacing: 0.1em;
+  text-transform: uppercase; margin-bottom: 0.5rem;
+  display: flex; align-items: center; gap: 0.35rem;
+}
+
+.scan-status-bar {
+  display: flex; align-items: center; gap: 0.6rem;
+  font-size: 0.8rem; color: var(--text2);
+  padding: 0.55rem 0.85rem;
+  background: var(--surface2);
+  border-radius: var(--r); border: 1px solid var(--border);
+  margin-bottom: 0.45rem;
+}
+.terminal {
+  background: var(--text); border-radius: var(--r);
+  padding: 0.85rem 1rem; font-family: var(--mono);
+  font-size: 0.72rem; line-height: 1.9;
+  max-height: 200px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: #444 transparent;
+  margin-top: 0.75rem;
+}
+.terminal::-webkit-scrollbar { width: 3px; }
+.terminal::-webkit-scrollbar-thumb { background: #444; }
+.t-line { display: flex; gap: 0.45rem; animation: tFade 0.2s ease; }
+@keyframes tFade { from{opacity:0;transform:translateY(2px)} to{opacity:1;transform:none} }
+.t-prompt { color: #4a7c5e; flex-shrink: 0; user-select: none; }
+.t-text  { color: #a8b5a2; }
+.t-ok    { color: #5dbb7a; }
+.t-warn  { color: #d4a84b; }
+.t-err   { color: #e06c6c; }
+.t-info  { color: #7daadd; }
+
+.results-summary-bar {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.7rem 1rem; margin-bottom: 1.15rem;
+  background: var(--surface2); border-radius: var(--r);
+  border-left: 3px solid var(--accent);
+  font-size: 0.875rem; color: var(--text2); line-height: 1.6;
+  border-right: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs {
+  display: flex; gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.15rem;
+}
+/* FIX: real tab buttons for keyboard accessibility */
+.tab {
+  padding: 0.55rem 1rem;
+  font-family: var(--mono); font-size: 0.72rem;
+  color: var(--text3); cursor: pointer;
+  border: none; border-bottom: 2px solid transparent;
+  background: none;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+  display: flex; align-items: center; gap: 0.4rem;
+  user-select: none;
+}
+.tab:hover { color: var(--text2); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 3px; }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-count {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 0.05rem 0.45rem;
+  border-radius: 100px; font-size: 0.6rem;
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.sev-filters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.sev-filter {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.7rem; border-radius: 100px;
+  font-family: var(--mono); font-size: 0.65rem; font-weight: 500;
+  cursor: pointer; border: 1px solid transparent;
+  transition: all 0.15s; user-select: none;
+}
+.sev-filter.high   { background: rgba(139,26,26,0.08);  color: var(--red);   border-color: rgba(139,26,26,0.2); }
+.sev-filter.medium { background: rgba(122,74,0,0.08);   color: var(--amber); border-color: rgba(122,74,0,0.2); }
+.sev-filter.low    { background: rgba(26,58,107,0.08);  color: var(--blue);  border-color: rgba(26,58,107,0.2); }
+.sev-filter.off    { opacity: 0.35; }
+.sev-filter:hover  { opacity: 1 !important; }
+
+.finding {
+  border: 1px solid var(--border);
+  border-radius: var(--r); margin: 0.35rem 0;
+  overflow: hidden; transition: border-color 0.15s;
+  background: var(--surface);
+}
+.finding[open] { border-color: var(--border2); box-shadow: var(--shadow); }
+.finding summary {
+  display: flex; align-items: flex-start; gap: 0.55rem;
+  padding: 0.6rem 0.85rem;
+  cursor: pointer; list-style: none;
+  background: var(--surface);
+}
+.finding summary::-webkit-details-marker { display: none; }
+.finding summary:hover { background: var(--surface2); }
+.finding.hidden { display: none; }
+
+.finding-sev {
+  font-family: var(--mono); font-size: 0.58rem; font-weight: 500;
+  letter-spacing: 0.07em; text-transform: uppercase;
+  padding: 0.14rem 0.45rem; border-radius: 4px;
+  flex-shrink: 0; margin-top: 3px;
+}
+.sev-high   { background: rgba(139,26,26,0.08); color: var(--red);   border: 1px solid rgba(139,26,26,0.18); }
+.sev-medium { background: rgba(122,74,0,0.08);  color: var(--amber); border: 1px solid rgba(122,74,0,0.18); }
+.sev-low    { background: rgba(26,58,107,0.08); color: var(--blue);  border: 1px solid rgba(26,58,107,0.18); }
+
+.finding-headline { flex: 1; display: flex; flex-direction: column; gap: 0.08rem; min-width: 0; }
+.finding-resource {
+  font-family: var(--mono); font-size: 0.78rem;
+  font-weight: 500; color: var(--text); line-height: 1.25;
+}
+.finding-desc {
+  font-size: 0.78rem; color: var(--text3);
+  font-style: italic; font-family: var(--sans);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.finding-chevron {
+  margin-left: auto; font-size: 0.52rem;
+  color: var(--text3); transition: transform 0.2s; flex-shrink: 0;
+  margin-top: 5px;
+}
+.finding[open] .finding-chevron { transform: rotate(180deg); }
+
+.finding-body {
+  padding: 0.65rem 0.85rem 0.8rem;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 0.45rem;
+  font-size: 0.845rem; background: var(--bg);
+}
+.finding-row { display: flex; gap: 0.5rem; line-height: 1.55; }
+.finding-label {
+  font-family: var(--mono); font-size: 0.6rem; font-weight: 500;
+  letter-spacing: 0.07em; text-transform: uppercase;
+  flex-shrink: 0; padding-top: 0.15rem; width: 3.2rem;
+}
+.finding-label.risk { color: var(--amber); }
+.finding-label.fix  { color: var(--accent); }
+.finding-text { color: var(--text2); }
+
+code.ic {
+  font-family: var(--mono); font-size: 0.8em;
+  background: var(--surface2); border: 1px solid var(--border);
+  padding: 0.08em 0.3em; border-radius: 3px; color: var(--accent);
+}
+
+.fix-block {
+  margin: 0 0 1rem;
+  border: 1px solid var(--border2); border-radius: var(--r);
+  overflow: hidden;
+}
+.fix-block-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.45rem 0.85rem;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 0.67rem; color: var(--text2);
+}
+.fix-block pre {
+  background: var(--text); padding: 0.9rem 1rem;
+  overflow-x: auto; font-family: var(--mono);
+  font-size: 0.72rem; line-height: 1.75;
+  color: #c8e6b4; margin: 0;
+  max-height: 380px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: #444 transparent;
+}
+.fix-block pre::-webkit-scrollbar { height: 3px; width: 3px; }
+.fix-block pre::-webkit-scrollbar-thumb { background: #444; }
+
+.copy-btn {
+  display: flex; align-items: center; gap: 0.28rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px; color: rgba(255,255,255,0.45);
+  font-family: var(--mono); font-size: 0.58rem;
+  font-weight: 500; cursor: pointer;
+  transition: all 0.12s; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.copy-btn:hover { background: rgba(255,255,255,0.13); color: rgba(255,255,255,0.75); }
+.copy-btn.copied { color: #5dbb7a; border-color: rgba(93,187,122,0.35); background: rgba(93,187,122,0.1); }
+
+.copy-btn-light {
+  display: flex; align-items: center; gap: 0.28rem;
+  padding: 0.18rem 0.5rem;
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: 4px; color: var(--text3);
+  font-family: var(--mono); font-size: 0.58rem;
+  font-weight: 500; cursor: pointer;
+  transition: all 0.12s; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.copy-btn-light:hover { color: var(--text2); border-color: var(--text3); }
+.copy-btn-light.copied { color: var(--accent); border-color: var(--accent); background: var(--green-dim); }
+
+.section-head {
+  font-family: var(--serif); font-size: 0.95rem; font-weight: 400;
+  color: var(--text); margin: 0 0 0.75rem;
+  padding-bottom: 0.3rem; border-bottom: 1px solid var(--border);
+  letter-spacing: -0.01em; font-style: italic;
+}
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 2.25rem 1rem; text-align: center; gap: 0.6rem;
+}
+.empty-icon {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--green-dim); border: 1px solid var(--green-mid);
+  display: flex; align-items: center; justify-content: center; font-size: 1rem;
+}
+.empty-title { font-family: var(--serif); font-size: 0.95rem; font-style: italic; color: var(--accent); }
+.empty-sub { font-size: 0.8rem; color: var(--text3); max-width: 260px; line-height: 1.5; }
+
+.next-steps {
+  background: var(--green-dim); border: 1px solid var(--green-mid);
+  border-radius: var(--r2); padding: 1.1rem; margin-top: 0.5rem;
+}
+.next-steps-title {
+  font-family: var(--serif); font-size: 0.9rem; font-style: italic;
+  font-weight: 400; color: var(--accent); margin-bottom: 0.75rem;
+}
+.next-step {
+  display: flex; align-items: flex-start; gap: 0.7rem;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--green-mid);
+  font-size: 0.82rem; color: var(--text2);
+}
+.next-step:last-child { border-bottom: none; }
+.next-step-num {
+  width: 19px; height: 19px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  font-family: var(--mono); font-size: 0.6rem; font-weight: 500;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 0.12rem;
+}
+
+.audit-entry {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.45rem 0; border-bottom: 1px solid var(--border);
+  font-size: 0.76rem;
+}
+.audit-entry:last-child { border-bottom: none; }
+.audit-time { font-family: var(--mono); font-size: 0.62rem; color: var(--text3); flex-shrink: 0; }
+.audit-badge {
+  padding: 0.12rem 0.45rem; border-radius: 4px;
+  font-family: var(--mono); font-size: 0.58rem; font-weight: 500;
+  letter-spacing: 0.06em; flex-shrink: 0; text-transform: uppercase;
+}
+.audit-badge.FETCH_IAC        { background: var(--blue-dim);  color: var(--blue); }
+.audit-badge.AI_SCAN          { background: var(--amber-dim); color: var(--amber); }
+.audit-badge.DRY_RUN_PR       { background: var(--green-dim); color: var(--accent); }
+.audit-badge.GITHUB_CONNECTED { background: var(--green-dim); color: var(--accent); }
+.audit-badge.USER_LOGIN       { background: var(--surface2);  color: var(--text2); }
+.audit-badge.USER_LOGOUT      { background: var(--surface2);  color: var(--text2); }
+.audit-detail { color: var(--text2); flex: 1; }
+.audit-target { font-family: var(--mono); font-size: 0.62rem; color: var(--text3); }
+
+.spinner {
+  width: 11px; height: 11px;
+  border: 1.5px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.success-note {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.6rem 0.85rem; border-radius: var(--r);
+  background: var(--green-dim); border: 1px solid var(--green-mid);
+  color: var(--accent); font-size: 0.8rem; font-weight: 500;
+  animation: fadeUp 0.3s ease; margin-top: 0.75rem;
+}
+.success-note svg { flex-shrink: 0; }
+
+.stats-row {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem; margin-bottom: 1.1rem;
+}
+.stat-box {
+  background: var(--surface2); border-radius: var(--r);
+  padding: 0.75rem 0.9rem;
+  display: flex; flex-direction: column; gap: 0.15rem;
+}
+.stat-label { font-family: var(--mono); font-size: 0.58rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; }
+.stat-value { font-family: var(--serif); font-size: 1.5rem; font-weight: 300; line-height: 1; }
+.stat-value.high   { color: var(--red); }
+.stat-value.medium { color: var(--amber); }
+.stat-value.low    { color: var(--blue); }
+
+.divider {
+  display: flex; align-items: center; gap: 0.65rem;
+  margin: 1.5rem 0 0.85rem;
+  font-family: var(--mono); font-size: 0.6rem;
+  color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase;
+}
+.divider::before, .divider::after { content:''; flex:1; height:1px; background: var(--border); }
+
+.toast {
+  position: fixed; bottom: 1.35rem; right: 1.35rem;
+  background: var(--text); color: #e8e2d8;
+  border-radius: var(--r); padding: 0.65rem 1rem;
+  font-size: 0.8rem; z-index: 10000;
+  transform: translateY(60px); opacity: 0;
+  transition: all 0.22s ease; max-width: 270px;
+  font-family: var(--sans);
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.ok   { background: var(--accent); }
+.toast.err  { background: var(--red); }
+
+footer {
+  margin-top: 2.5rem; padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.72rem; color: var(--text3);
+  flex-wrap: wrap; gap: 0.5rem;
+  font-family: var(--mono);
+}
+
+@media (max-width: 660px) {
+  .shell { grid-template-columns: 1fr; }
+  .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 1rem 1.2rem; gap: 0.85rem; }
+  .sidebar-bottom { margin-top: 0; flex-direction: row; }
+  .main { padding: 1.2rem 1.2rem 3rem; }
+  .stats-row { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <nav class="sidebar" aria-label="Progress navigation">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.3 2.4 6.4 6 7.2C11.6 14.4 14 11.3 14 8V4L8 1zm0 2.2l4 2v2.8c0 2.4-1.7 4.6-4 5.4-2.3-.8-4-3-4-5.4V5.2l4-2z"/></svg>
+      </div>
+      <div class="logo-text">
+        <div class="name">IaC Sentinel</div>
+        <div class="sub">Token Vault · AI</div>
+      </div>
+    </div>
+
+    <div class="nav-steps" role="list">
+      <div class="nav-step active" id="step1" role="listitem" aria-current="step">
+        <div class="nav-dot">1</div> Login
+      </div>
+      <div class="nav-step" id="step2" role="listitem">
+        <div class="nav-dot">2</div> Connect GitHub
+      </div>
+      <div class="nav-step" id="step3" role="listitem">
+        <div class="nav-dot">3</div> Scan Repo
+      </div>
+      <div class="nav-step" id="step4" role="listitem">
+        <div class="nav-dot">4</div> Results
+      </div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="status-pill" role="status">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">connecting...</span>
+      </div>
+      <div id="userBadge" style="display:none" class="auth-pill" role="status">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+          <path d="M1.5 5.5L3.5 7.5L8.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>authenticated</span>
+        <button onclick="logout()">sign out</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main">
+    <h1 class="page-title">Security Scanner</h1>
+    <p class="page-sub">Scan Terraform &amp; CloudFormation with AI-powered analysis via Auth0 Token Vault</p>
+
+    <div class="card active" id="cardAuth">
+      <div class="card-head" onclick="toggleCard('cardAuth')" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')toggleCard('cardAuth')">
+        <div class="card-title">
+          <div class="card-active-dot"></div>
+          Authentication
+        </div>
+        <div class="card-meta">
+          <span class="tag tag-green">Auth0</span>
+          <span class="tag tag-blue">OAuth 2.0</span>
+          <span class="card-chevron">▾</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="card-desc">Sign in with your Auth0 account. IaC Sentinel uses <strong>Auth0 Token Vault</strong> to store and retrieve your GitHub credentials — the agent never handles your tokens directly.</p>
+        <button class="btn btn-primary" onclick="startLogin()" id="loginBtn">Login with Auth0 →</button>
+      </div>
+    </div>
+
+    <div class="card locked" id="cardConnect">
+      <div class="card-head" onclick="toggleCard('cardConnect')" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')toggleCard('cardConnect')">
+        <div class="card-title">
+          <div class="card-active-dot"></div>
+          Connect GitHub via Token Vault
+        </div>
+        <div class="card-meta">
+          <span class="tag tag-amber">Token Vault</span>
+          <span class="card-chevron">▾</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="card-desc">Connect your GitHub account through Auth0's Token Vault. Clicking the button opens the authorization page in a new tab — come back here when you're done and it will complete automatically.</p>
+        <button class="btn btn-primary" onclick="connectGithub()" id="connectBtn">Connect GitHub →</button>
+
+        <div class="connect-box" id="connectBox">
+          <div class="connect-box-label">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+              <circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M5 3v2.5L6.5 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+            Waiting for GitHub authorization
+          </div>
+          <p style="font-size:0.8rem; color:var(--text2); margin-bottom:0.75rem; line-height:1.55;">
+            A GitHub authorization page has opened in a new tab. Authorize the app there, then this page will update automatically.
+          </p>
+          <div style="display:flex; gap:0.65rem; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="openConnectUrl()" id="reopenBtn">Re-open authorization tab ↗</button>
+            <span id="waitingIndicator" style="display:flex;align-items:center;gap:0.35rem;font-size:0.72rem;color:var(--text3);font-family:var(--mono);">
+              <div class="spinner"></div> polling for completion...
+            </span>
+          </div>
+        </div>
+
+        <div id="githubConnectedNote" style="display:none">
+          <div class="success-note">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M2 7L5.5 10.5L12 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            GitHub connected to Token Vault — ready to scan
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card locked" id="cardScan">
+      <div class="card-head" onclick="toggleCard('cardScan')" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')toggleCard('cardScan')">
+        <div class="card-title">
+          <div class="card-active-dot"></div>
+          Scan Repository
+        </div>
+        <div class="card-meta">
+          <span class="tag tag-amber">Checkov</span>
+          <span class="tag tag-blue">DeepSeek</span>
+          <span class="tag tag-green">Grok</span>
+          <span class="card-chevron">▾</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="card-desc"><strong>Grok-3-mini</strong> orchestrates the agent — fetching your IaC files via <strong>Token Vault</strong>, running <strong>Checkov</strong> static analysis, then delegating to <strong>DeepSeek</strong> to explain each finding and generate hardened fixes.</p>
+        <div class="field-row" style="margin-bottom:1rem">
+          <div class="field">
+            <label class="field-label" for="repoOwner">Owner</label>
+            <input type="text" class="input" id="repoOwner" placeholder="e.g. hashicorp">
+          </div>
+          <div class="field">
+            <label class="field-label" for="repoName">Repository</label>
+            <input type="text" class="input" id="repoName" placeholder="e.g. terraform-aws-modules">
+          </div>
+          <button class="btn btn-primary" onclick="startScan()" id="scanBtn" style="align-self:flex-end;flex-shrink:0">
+            Run Scan →
+          </button>
+        </div>
+
+        <div id="scanProgress" style="display:none">
+          <div class="scan-status-bar">
+            <div class="spinner" id="scanSpinner"></div>
+            <span id="scanStatusText">Initializing...</span>
+          </div>
+          <div class="terminal" id="terminal" role="log" aria-label="Scan log"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="cardResults" style="display:none">
+      <div class="card-head">
+        <div class="card-title">
+          <div class="card-active-dot"></div>
+          Scan Results
+        </div>
+        <div class="card-meta">
+          <span class="tag tag-green">complete</span>
+          <button class="btn btn-outline btn-sm" onclick="resetScan()">↺ New Scan</button>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <div class="results-summary-bar" id="resultSummary" style="display:none">
+          <span id="summaryText"></span>
+        </div>
+
+        <div class="stats-row" id="statsRow" style="display:none">
+          <div class="stat-box">
+            <div class="stat-label">High</div>
+            <div class="stat-value high" id="statHigh">—</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Medium</div>
+            <div class="stat-value medium" id="statMedium">—</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Low</div>
+            <div class="stat-value low" id="statLow">—</div>
+          </div>
+        </div>
+
+        <div class="tabs" id="resultTabs" style="display:none" role="tablist">
+          <!-- FIX: real <button> elements for keyboard accessibility -->
+          <button class="tab active" id="tabFindings" role="tab" aria-selected="true"
+                  aria-controls="panelFindings" onclick="switchTab('findings')">
+            findings <span class="tab-count" id="tabFindingsCount">0</span>
+          </button>
+          <button class="tab" id="tabFixes" role="tab" aria-selected="false"
+                  aria-controls="panelFixes" style="display:none" onclick="switchTab('fixes')">
+            fixes <span class="tab-count" id="tabFixesCount">0</span>
+          </button>
+          <button class="tab" id="tabAudit" role="tab" aria-selected="false"
+                  aria-controls="panelAudit" onclick="switchTab('audit')">
+            audit
+          </button>
+        </div>
+
+        <div class="tab-panel active" id="panelFindings" role="tabpanel" aria-labelledby="tabFindings">
+          <div class="sev-filters" id="sevFilters" style="display:none"></div>
+          <div id="findingsList"></div>
+        </div>
+
+        <div class="tab-panel" id="panelFixes" role="tabpanel" aria-labelledby="tabFixes">
+          <p class="section-head">Proposed fixes — high severity only</p>
+          <div id="fixFilesList"></div>
+          <div class="next-steps" id="nextSteps">
+            <div class="next-steps-title">→ What you can do next</div>
+            <div class="next-step"><div class="next-step-num">1</div><div><strong style="color:var(--text)">Review the fixes</strong> — the Terraform above addresses all high-severity issues.</div></div>
+            <div class="next-step"><div class="next-step-num">2</div><div><strong style="color:var(--text)">Apply manually</strong> — copy the fixed blocks and open a real PR on GitHub.</div></div>
+            <div class="next-step"><div class="next-step-num">3</div><div><strong style="color:var(--text)">Scan again</strong> — confirm all issues are resolved after applying fixes.</div></div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="panelAudit" role="tabpanel" aria-labelledby="tabAudit">
+          <div id="auditList"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <footer>
+      <span>IaC Sentinel · Auth0 Token Vault Hackathon 2026</span>
+      <span>Auth0 · Grok-3-mini · DeepSeek · Checkov</span>
+    </footer>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+<script>
+const S = {
+  loggedIn: false,
+  connectUrl: null,
+  pollInterval: null,
+  connectPollInterval: null,
+  activeFilters: new Set(['High','Medium','Low']),
+  // FIX: store finding text by index for copy — avoids multiline onclick issue
+  _findingTexts: [],
+};
+const _termPrinted = new Set();
+
+function toast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast show ${type}`;
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.className = 'toast', 3500);
+}
+
+function setStep(n) {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`step${i}`);
+    const dot = el.querySelector('.nav-dot');
+    el.classList.remove('active','done');
+    el.removeAttribute('aria-current');
+    if (i < n) { el.classList.add('done'); dot.textContent = '✓'; }
+    else dot.textContent = i;
+    if (i === n) { el.classList.add('active'); el.setAttribute('aria-current','step'); }
+  }
+}
+
+function unlock(id) {
+  const c = document.getElementById(id);
+  c.classList.remove('locked');
+  c.classList.add('active');
+}
+
+function collapseCard(id) {
+  const card = document.getElementById(id);
+  card.classList.add('done-card','collapsed');
+  card.classList.remove('active','locked');
+}
+
+function toggleCard(id) {
+  const card = document.getElementById(id);
+  if (card.classList.contains('locked') || card.classList.contains('active')) return;
+  const isCollapsed = card.classList.toggle('collapsed');
+  const head = card.querySelector('.card-head');
+  if (head) head.setAttribute('aria-expanded', String(!isCollapsed));
+}
+
+// FIX: term() uses DOM APIs instead of innerHTML to prevent XSS
+function term(text, cls = 't-text', key = null) {
+  const k = key || text;
+  if (_termPrinted.has(k)) return;
+  _termPrinted.add(k);
+  _appendTermLine(text, cls);
+}
+
+function termForce(text, cls = 't-text') {
+  _appendTermLine(text, cls);
+}
+
+function _appendTermLine(text, cls) {
+  const t = document.getElementById('terminal');
+  const d = document.createElement('div');
+  d.className = 't-line';
+
+  const promptSpan = document.createElement('span');
+  promptSpan.className = 't-prompt';
+  promptSpan.textContent = '$ ';
+
+  const textSpan = document.createElement('span');
+  textSpan.className = cls;
+  textSpan.textContent = text;  // FIX: textContent, never innerHTML
+
+  d.appendChild(promptSpan);
+  d.appendChild(textSpan);
+  t.appendChild(d);
+  t.scrollTop = t.scrollHeight;
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function fmtInline(s) {
+  // Build safe inline-code spans with DOM, not innerHTML string concat
+  const result = document.createDocumentFragment();
+  const parts = s.split(/`([^`]+)`/g);
+  parts.forEach((part, i) => {
+    if (i % 2 === 0) {
+      if (part) result.appendChild(document.createTextNode(part));
+    } else {
+      const code = document.createElement('code');
+      code.className = 'ic';
+      code.textContent = part;
+      result.appendChild(code);
+    }
+  });
+  return result;
+}
+
+function switchTab(name) {
+  ['findings','fixes','audit'].forEach(n => {
+    const tab = document.getElementById('tab' + n.charAt(0).toUpperCase() + n.slice(1));
+    const panel = document.getElementById('panel' + n.charAt(0).toUpperCase() + n.slice(1));
+    if (tab)   { tab.classList.remove('active');   tab.setAttribute('aria-selected','false'); }
+    if (panel) { panel.classList.remove('active'); }
+  });
+  const activeTab = document.getElementById('tab' + name.charAt(0).toUpperCase() + name.slice(1));
+  const activePanel = document.getElementById('panel' + name.charAt(0).toUpperCase() + name.slice(1));
+  if (activeTab)   { activeTab.classList.add('active');   activeTab.setAttribute('aria-selected','true'); }
+  if (activePanel) { activePanel.classList.add('active'); }
+}
+
+async function checkHealth() {
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    if (d.status === 'healthy') {
+      document.getElementById('statusDot').classList.add('live');
+      document.getElementById('statusText').textContent = `online · vault ${d.token_vault}`;
+    }
+  } catch {
+    document.getElementById('statusText').textContent = 'offline';
+  }
+}
+
+async function startLogin() {
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Redirecting...';
+  try {
+    const r = await fetch('/auth/login', { credentials: 'include' });
+    const d = await r.json();
+    window.location.href = d.login_url;
+  } catch {
+    toast('Failed to initiate login', 'err');
+    btn.disabled = false;
+    btn.innerHTML = 'Login with Auth0 →';
+  }
+}
+
+async function exchangeCode(code) {
+  const r = await fetch('/auth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+    credentials: 'include',
+  });
+  const d = await r.json();
+  if (r.ok) {
+    S.loggedIn = true;
+    setLoggedIn();
+    toast('Logged in successfully', 'ok');
+  } else {
+    toast(d.detail || 'Login failed', 'err');
+  }
+}
+
+function setLoggedIn() {
+  document.getElementById('userBadge').style.display = 'flex';
+  collapseCard('cardAuth');
+  unlock('cardConnect');
+  setStep(2);
+}
+
+async function logout() {
+  await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+  localStorage.removeItem('iac_auth_session');
+  location.reload();
+}
+
+async function checkSession() {
+  const btn = document.getElementById('loginBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Checking...'; }
+  try {
+    const r = await fetch('/audit', { credentials: 'include' });
+    if (r.ok) { S.loggedIn = true; setLoggedIn(); return; }
+  } catch {}
+  if (btn && !S.loggedIn) { btn.disabled = false; btn.innerHTML = 'Login with Auth0 →'; }
+}
+
+async function connectGithub() {
+  const btn = document.getElementById('connectBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Initiating...';
+  try {
+    const r = await fetch('/connect/github', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ redirect_uri: window.location.origin + '/callback' }),
+      credentials: 'include',
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Failed');
+
+    localStorage.setItem('iac_auth_session', d.auth_session);
+    S.connectUrl = d.connect_url;
+
+    window.open(d.connect_url, '_blank', 'noopener');
+
+    document.getElementById('connectBox').classList.add('show');
+    btn.innerHTML = '↺ Re-open tab';
+    btn.disabled = false;
+    btn.onclick = openConnectUrl;
+
+    startConnectPoll();
+  } catch (e) {
+    toast(e.message || 'Connection failed', 'err');
+    btn.disabled = false;
+    btn.innerHTML = 'Connect GitHub →';
+  }
+}
+
+function openConnectUrl() {
+  if (S.connectUrl) window.open(S.connectUrl, '_blank', 'noopener');
+}
+
+function startConnectPoll() {
+  if (S.connectPollInterval) clearInterval(S.connectPollInterval);
+  let consecutiveErrors = 0;
+  S.connectPollInterval = setInterval(async () => {
+    try {
+      const code    = localStorage.getItem('iac_connect_code');
+      const session = localStorage.getItem('iac_auth_session');
+
+      if (code && session) {
+        clearInterval(S.connectPollInterval);
+        S.connectPollInterval = null;
+        localStorage.removeItem('iac_connect_code');
+        await finishConnect(session, code);
+        return;
+      }
+
+      const r = await fetch('/connect/status', { credentials: 'include' });
+
+      // FIX: stop polling on auth/session failures
+      if (r.status === 401 || r.status === 403) {
+        clearInterval(S.connectPollInterval);
+        S.connectPollInterval = null;
+        document.getElementById('waitingIndicator').textContent = 'Session expired — please log in again.';
+        toast('Session expired during GitHub connect', 'err');
+        return;
+      }
+
+      if (!r.ok) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= 5) {
+          clearInterval(S.connectPollInterval);
+          S.connectPollInterval = null;
+          document.getElementById('waitingIndicator').textContent = 'Connection check failed. Please try again.';
+          document.getElementById('connectBtn').disabled = false;
+          document.getElementById('connectBtn').innerHTML = 'Connect GitHub →';
+          document.getElementById('connectBtn').onclick = connectGithub;
+          toast('GitHub connection check failed', 'err');
+        }
+        return;
+      }
+
+      consecutiveErrors = 0;
+      const data = await r.json();
+      const accounts = data.accounts || data;
+      const hasGh = Array.isArray(accounts) && accounts.some(a => a.connection === 'github');
+      if (hasGh) {
+        clearInterval(S.connectPollInterval);
+        S.connectPollInterval = null;
+        onGithubConnected();
+      }
+    } catch (e) {
+      // FIX: count network errors, stop after repeated failures
+      consecutiveErrors++;
+      if (consecutiveErrors >= 5) {
+        clearInterval(S.connectPollInterval);
+        S.connectPollInterval = null;
+        document.getElementById('waitingIndicator').textContent = 'Network error. Please try again.';
+        toast('Network error during GitHub connect', 'err');
+      }
+    }
+  }, 2000);
+}
+
+async function finishConnect(session, code) {
+  document.getElementById('waitingIndicator').innerHTML = '<div class="spinner"></div> Completing...';
+  try {
+    const r = await fetch('/connect/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        auth_session: session,
+        connect_code: code,
+        redirect_uri: window.location.origin + '/callback',
+      }),
+      credentials: 'include',
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Failed');
+    localStorage.removeItem('iac_auth_session');
+    onGithubConnected();
+  } catch (e) {
+    toast(e.message || 'Could not complete connection', 'err');
+    document.getElementById('waitingIndicator').innerHTML = '<div class="spinner"></div> polling...';
+  }
+}
+
+function onGithubConnected() {
+  document.getElementById('connectBox').classList.remove('show');
+  document.getElementById('githubConnectedNote').style.display = 'block';
+  document.getElementById('connectBtn').style.display = 'none';
+  if (S.connectPollInterval) { clearInterval(S.connectPollInterval); S.connectPollInterval = null; }
+  setTimeout(() => {
+    collapseCard('cardConnect');
+    unlock('cardScan');
+    setStep(3);
+    toast('GitHub connected to Token Vault!', 'ok');
+  }, 1200);
+}
+
+async function handleCallback() {
+  const p           = new URLSearchParams(window.location.search);
+  const code        = p.get('code');
+  const connectCode = p.get('connect_code');
+  if (!code && !connectCode) return;
+  window.history.replaceState({}, '', '/');
+
+  if (connectCode) {
+    localStorage.setItem('iac_connect_code', connectCode);
+    S.loggedIn = true;
+    setLoggedIn();
+    const session = localStorage.getItem('iac_auth_session');
+    if (session) {
+      localStorage.removeItem('iac_connect_code');
+      await finishConnect(session, connectCode);
+    }
+    return;
+  }
+
+  if (code) {
+    await exchangeCode(code);
+  }
+}
+
+async function startScan() {
+  const owner = document.getElementById('repoOwner').value.trim();
+  const name  = document.getElementById('repoName').value.trim();
+  if (!owner || !name) { toast('Enter repo owner and name', 'err'); return; }
+
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Scanning...';
+
+  // FIX: reset all result UI state before starting a new scan
+  document.getElementById('cardResults').style.display = 'none';
+  document.getElementById('resultSummary').style.display = 'none';
+  document.getElementById('statsRow').style.display = 'none';
+  document.getElementById('resultTabs').style.display = 'none';
+  document.getElementById('tabFixes').style.display = 'none';
+  document.getElementById('findingsList').innerHTML = '';
+  document.getElementById('fixFilesList').innerHTML = '';
+  document.getElementById('auditList').innerHTML = '';
+  document.getElementById('sevFilters').style.display = 'none';
+  document.getElementById('summaryText').textContent = '';
+  document.getElementById('statHigh').textContent = '—';
+  document.getElementById('statMedium').textContent = '—';
+  document.getElementById('statLow').textContent = '—';
+
+  document.getElementById('scanProgress').style.display = 'block';
+  document.getElementById('terminal').innerHTML = '';
+  // FIX: restore spinner visibility between runs
+  document.getElementById('scanSpinner').style.display = 'inline-block';
+  document.getElementById('scanStatusText').textContent = 'Agent starting...';
+  _termPrinted.clear();
+  S._findingTexts = [];
+  if (S.pollInterval) { clearInterval(S.pollInterval); S.pollInterval = null; }
+
+  term(`fetch_iac_files("${owner}", "${name}")`, 't-info', 'fetch_start');
+  term('Exchanging credentials via Token Vault...', 't-text', 'vault_exchange');
+
+  try {
+    const r = await fetch('/act', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_owner: owner, repo_name: name }),
+      credentials: 'include',
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Failed to start');
+    pollResult(d.job_id);
+  } catch (e) {
+    termForce(`Error: ${e.message}`, 't-err');
+    btn.disabled = false;
+    btn.innerHTML = 'Run Scan →';
+    document.getElementById('scanStatusText').textContent = 'Failed';
+  }
+}
+
+const AUDIT_TERM_MAP = {
+  FETCH_IAC:  ['✓ Token Vault exchange successful — files retrieved', 't-ok'],
+  AI_SCAN:    ['✓ Checkov + DeepSeek analysis complete', 't-ok'],
+  DRY_RUN_PR: ['✓ Fix diff preview generated', 't-ok'],
+};
+const PROGRESS_MSGS = [
+  [2,  'Running Checkov static analysis...', 't-warn'],
+  [4,  'DeepSeek analyzing vulnerabilities...', 't-text'],
+  [7,  'Generating remediation code...', 't-text'],
+  [11, 'Building diff preview...', 't-text'],
+];
+
+function pollResult(jobId) {
+  let pollCount = 0;
+  S.pollInterval = setInterval(async () => {
+    pollCount++;
+    try {
+      const r = await fetch(`/result/${jobId}`, { credentials: 'include' });
+
+      // FIX: fail fast on HTTP errors instead of silently continuing
+      if (!r.ok) {
+        clearInterval(S.pollInterval); S.pollInterval = null;
+        const detail = r.status === 401 ? 'Session expired — please log in again.'
+                     : r.status === 403 ? 'Access denied.'
+                     : r.status === 404 ? 'Job not found.'
+                     : `Server error (${r.status}).`;
+        termForce(`Error: ${detail}`, 't-err');
+        document.getElementById('scanBtn').disabled = false;
+        document.getElementById('scanBtn').innerHTML = 'Run Scan →';
+        document.getElementById('scanStatusText').textContent = 'Failed';
+        document.getElementById('scanSpinner').style.display = 'none';
+        toast(detail, 'err');
+        return;
+      }
+
+      const d = await r.json();
+
+      if (d.recent_audit) {
+        d.recent_audit.forEach(ev => {
+          const mapped = AUDIT_TERM_MAP[ev.action];
+          if (mapped) term(mapped[0], mapped[1], `audit:${ev.action}:${ev.timestamp}`);
+        });
+      }
+      PROGRESS_MSGS.forEach(([at, msg, cls]) => {
+        if (pollCount === at) term(msg, cls, `progress:${at}`);
+      });
+
+      document.getElementById('scanStatusText').textContent =
+        d.status === 'running' ? 'Scanning...' : d.status;
+
+      if (d.status === 'done') {
+        clearInterval(S.pollInterval); S.pollInterval = null;
+        termForce('Scan complete ✓', 't-ok');
+        document.getElementById('scanSpinner').style.display = 'none';
+        document.getElementById('scanStatusText').textContent = 'Complete';
+        document.getElementById('scanBtn').disabled = false;
+        document.getElementById('scanBtn').innerHTML = 'Run Scan →';
+        showResults(d);
+      } else if (d.status === 'error') {
+        clearInterval(S.pollInterval); S.pollInterval = null;
+        termForce(`Error: ${d.error}`, 't-err');
+        if (d.instructions) termForce(d.instructions, 't-warn');
+        document.getElementById('scanBtn').disabled = false;
+        document.getElementById('scanBtn').innerHTML = 'Run Scan →';
+        document.getElementById('scanStatusText').textContent = 'Failed';
+        document.getElementById('scanSpinner').style.display = 'none';
+      }
+    } catch (e) {
+      // FIX: stop on network error, surface it
+      clearInterval(S.pollInterval); S.pollInterval = null;
+      termForce(`Network error: ${e.message}`, 't-err');
+      document.getElementById('scanBtn').disabled = false;
+      document.getElementById('scanBtn').innerHTML = 'Run Scan →';
+      document.getElementById('scanStatusText').textContent = 'Failed';
+      document.getElementById('scanSpinner').style.display = 'none';
+    }
+  }, 3000);
+}
+
+function parseFindings(text) {
+  if (!text || !text.trim()) return [];
+  const SEV_RE = /^\[(High|Medium|Low)\]/i;
+  const lines  = text.split('\n');
+  const blocks = [];
+  let cur = null;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    const sevM = line.match(SEV_RE);
+    if (sevM) {
+      if (cur) blocks.push(cur);
+      const rest  = line.slice(sevM[0].length).trim();
+      const dash  = rest.indexOf(' — ');
+      const dash2 = rest.indexOf(' - ');
+      let resource = '', desc = '';
+      if (dash !== -1)  { resource = rest.slice(0, dash).trim();  desc = rest.slice(dash + 3).trim(); }
+      else if (dash2 !== -1) { resource = rest.slice(0, dash2).trim(); desc = rest.slice(dash2 + 3).trim(); }
+      else                   { desc = rest; }
+      cur = { sev: sevM[1], resource, desc, risk: '', fix: '' };
+    } else if (cur) {
+      if (/^-\s*Why it.?s risky:?\s*/i.test(line)) cur.risk = line.replace(/^-\s*Why it.?s risky:?\s*/i,'').trim();
+      else if (/^-\s*Fix:?\s*/i.test(line))          cur.fix  = line.replace(/^-\s*Fix:?\s*/i,'').trim();
+    }
+  }
+  if (cur) blocks.push(cur);
+  return blocks;
+}
+
+function parseFixBlocks(text) {
+  if (!text || !text.trim()) return [];
+  const blocks = [];
+  const parts  = text.split(/^### Fixed:\s*/m).filter(Boolean);
+  for (const part of parts) {
+    const nl   = part.indexOf('\n');
+    if (nl === -1) continue;
+    const path = part.slice(0, nl).trim();
+    const rest = part.slice(nl + 1);
+    const codeM = rest.match(/^```[\w]*\n([\s\S]*?)```/m);
+    if (!codeM) continue;
+    blocks.push({ path, code: codeM[1] });
+  }
+  return blocks;
+}
+
+function showResults(data) {
+  setStep(4);
+  const card = document.getElementById('cardResults');
+  card.style.display = 'block';
+  card.classList.add('active');
+
+  const findings  = parseFindings(data.findings_text || '');
+  const fixBlocks = parseFixBlocks(data.fix_blocks || '');
+  const summary   = data.summary || '';
+
+  if (summary) {
+    document.getElementById('summaryText').textContent = summary;
+    document.getElementById('resultSummary').style.display = 'flex';
+  }
+
+  const high   = findings.filter(f => f.sev.toLowerCase() === 'high').length;
+  const medium = findings.filter(f => f.sev.toLowerCase() === 'medium').length;
+  const low    = findings.filter(f => f.sev.toLowerCase() === 'low').length;
+  if (high + medium + low > 0) {
+    document.getElementById('statHigh').textContent   = high;
+    document.getElementById('statMedium').textContent = medium;
+    document.getElementById('statLow').textContent    = low;
+    document.getElementById('statsRow').style.display = 'grid';
+  }
+
+  document.getElementById('resultTabs').style.display = 'flex';
+  document.getElementById('tabFindingsCount').textContent = findings.length;
+
+  if (fixBlocks.length) {
+    document.getElementById('tabFixes').style.display = 'flex';
+    document.getElementById('tabFixesCount').textContent = fixBlocks.length;
+  }
+
+  renderFindings(findings);
+  renderFixBlocks(fixBlocks);
+  renderAudit(data.recent_audit || []);
+
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderFindings(findings) {
+  const list = document.getElementById('findingsList');
+  list.innerHTML = '';
+  S._findingTexts = [];
+
+  if (!findings.length) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">✓</div>
+      <div class="empty-title">No security issues detected</div>
+      <div class="empty-sub">IaC Sentinel found no misconfigurations in this repository.</div>
+    </div>`;
+    return;
+  }
+
+  const filtersEl = document.getElementById('sevFilters');
+  filtersEl.innerHTML = '';
+  const counts = { High: 0, Medium: 0, Low: 0 };
+  findings.forEach(f => counts[f.sev] = (counts[f.sev]||0) + 1);
+  S.activeFilters = new Set(['High','Medium','Low']);
+
+  ['High','Medium','Low'].forEach(sev => {
+    if (!counts[sev]) return;
+    const btn = document.createElement('button');
+    btn.className = `sev-filter ${sev.toLowerCase()}`;
+    btn.dataset.sev = sev;
+    const countSpan = document.createElement('span');
+    countSpan.textContent = counts[sev];
+    btn.appendChild(countSpan);
+    btn.appendChild(document.createTextNode(' ' + sev));
+    btn.onclick = () => {
+      if (S.activeFilters.has(sev)) S.activeFilters.delete(sev);
+      else S.activeFilters.add(sev);
+      btn.classList.toggle('off');
+      document.querySelectorAll('.finding').forEach(el => {
+        el.classList.toggle('hidden', !S.activeFilters.has(el.dataset.sev));
+      });
+    };
+    filtersEl.appendChild(btn);
+  });
+  filtersEl.style.display = 'flex';
+
+  findings.forEach((f, i) => {
+    const sevLower = f.sev.toLowerCase();
+    const sevClass = `sev-${sevLower}`;
+
+    // FIX: store plaintext for copy by index — no multiline onclick interpolation
+    const plainText = [
+      `[${f.sev.toUpperCase()}]${f.resource ? ' ' + f.resource : ''}${f.desc ? ' — ' + f.desc : ''}`,
+      f.risk ? `Risk: ${f.risk}` : '',
+      f.fix  ? `Fix: ${f.fix}`  : '',
+    ].filter(Boolean).join('\n');
+    S._findingTexts[i] = plainText;
+
+    const el = document.createElement('details');
+    el.className = 'finding';
+    el.dataset.sev = f.sev;
+
+    // Build summary using DOM (no innerHTML for user-derived content)
+    const summary = document.createElement('summary');
+
+    const sevBadge = document.createElement('span');
+    sevBadge.className = `finding-sev ${sevClass}`;
+    sevBadge.textContent = f.sev;
+
+    const headline = document.createElement('span');
+    headline.className = 'finding-headline';
+
+    if (f.resource) {
+      const res = document.createElement('span');
+      res.className = 'finding-resource';
+      res.textContent = f.resource;
+      headline.appendChild(res);
+    }
+
+    const desc = document.createElement('span');
+    desc.className = 'finding-desc';
+    desc.textContent = f.desc;
+    headline.appendChild(desc);
+
+    const chevron = document.createElement('span');
+    chevron.className = 'finding-chevron';
+    chevron.textContent = '▾';
+
+    summary.appendChild(sevBadge);
+    summary.appendChild(headline);
+    summary.appendChild(chevron);
+    el.appendChild(summary);
+
+    // Build body using DOM
+    const body = document.createElement('div');
+    body.className = 'finding-body';
+
+    if (f.risk) {
+      const row = document.createElement('div');
+      row.className = 'finding-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'finding-label risk';
+      lbl.textContent = 'Risk';
+      const txt = document.createElement('span');
+      txt.className = 'finding-text';
+      txt.appendChild(fmtInline(f.risk));
+      row.appendChild(lbl);
+      row.appendChild(txt);
+      body.appendChild(row);
+    }
+
+    if (f.fix) {
+      const row = document.createElement('div');
+      row.className = 'finding-row';
+      const lbl = document.createElement('span');
+      lbl.className = 'finding-label fix';
+      lbl.textContent = 'Fix';
+      const txt = document.createElement('span');
+      txt.className = 'finding-text';
+      txt.appendChild(fmtInline(f.fix));
+      row.appendChild(lbl);
+      row.appendChild(txt);
+      body.appendChild(row);
+    }
+
+    // FIX: copy button uses dataset index, not inline onclick with interpolated text
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn-light';
+    copyBtn.dataset.findingIndex = i;
+    copyBtn.textContent = '⎘ copy finding';
+    copyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(copyBtn.dataset.findingIndex, 10);
+      const text = S._findingTexts[idx] || '';
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = '✓ copied';
+        copyBtn.classList.add('copied');
+        setTimeout(() => { copyBtn.textContent = '⎘ copy finding'; copyBtn.classList.remove('copied'); }, 2000);
+      }).catch(() => toast('Copy failed', 'err'));
+    });
+    body.appendChild(copyBtn);
+
+    el.appendChild(body);
+    list.appendChild(el);
+  });
+}
+
+function renderFixBlocks(fixBlocks) {
+  const container = document.getElementById('fixFilesList');
+  container.innerHTML = '';
+  if (!fixBlocks.length) return;
+
+  fixBlocks.forEach((fb, i) => {
+    const uid = `fix-code-${i}`;
+
+    const el = document.createElement('div');
+    el.className = 'fix-block';
+
+    const header = document.createElement('div');
+    header.className = 'fix-block-header';
+
+    const pathSpan = document.createElement('span');
+    pathSpan.textContent = fb.path;  // textContent — safe
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn';
+    copyBtn.id = `${uid}-btn`;
+    copyBtn.textContent = '⎘ copy';
+    copyBtn.addEventListener('click', () => {
+      const pre = document.getElementById(uid);
+      if (!pre) return;
+      navigator.clipboard.writeText(pre.textContent).then(() => {
+        copyBtn.textContent = '✓ copied';
+        copyBtn.classList.add('copied');
+        setTimeout(() => { copyBtn.textContent = '⎘ copy'; copyBtn.classList.remove('copied'); }, 2000);
+      }).catch(() => toast('Copy failed', 'err'));
+    });
+
+    header.appendChild(pathSpan);
+    header.appendChild(copyBtn);
+
+    const pre = document.createElement('pre');
+    pre.id = uid;
+    pre.textContent = fb.code;  // textContent — safe, preserves whitespace in pre
+
+    el.appendChild(header);
+    el.appendChild(pre);
+    container.appendChild(el);
+  });
+}
+
+function renderAudit(entries) {
+  const list = document.getElementById('auditList');
+  list.innerHTML = '';
+  if (!entries.length) {
+    const p = document.createElement('p');
+    p.style.cssText = 'font-size:0.8rem;color:var(--text3);font-family:var(--mono);padding:0.5rem 0;';
+    p.textContent = 'No audit events recorded.';
+    list.appendChild(p);
+    return;
+  }
+  const now = new Date();
+  entries.forEach(ev => {
+    const ts      = new Date(ev.timestamp);
+    const sameDay = ts.toDateString() === now.toDateString();
+    const time    = sameDay
+      ? ts.toLocaleTimeString()
+      : ts.toLocaleDateString(undefined, { month:'short', day:'numeric' }) + ' ' + ts.toLocaleTimeString();
+
+    const row = document.createElement('div');
+    row.className = 'audit-entry';
+
+    const timeEl = document.createElement('span');
+    timeEl.className = 'audit-time';
+    timeEl.textContent = time;
+
+    const badge = document.createElement('span');
+    badge.className = `audit-badge ${ev.action || ''}`;
+    badge.textContent = ev.action || '';
+
+    const detail = document.createElement('span');
+    detail.className = 'audit-detail';
+    detail.textContent = ev.details || '—';
+
+    const target = document.createElement('span');
+    target.className = 'audit-target';
+    target.textContent = ev.target !== 'Internal' ? ev.target : '';
+
+    row.appendChild(timeEl);
+    row.appendChild(badge);
+    row.appendChild(detail);
+    row.appendChild(target);
+    list.appendChild(row);
+  });
+}
+
+function copyFinding(btn, idx) {
+  const text = S._findingTexts[idx] || '';
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⎘ copy finding'; btn.classList.remove('copied'); }, 2000);
+  }).catch(() => toast('Copy failed', 'err'));
+}
+
+function copyFixCode(uid, btn) {
+  const el = document.getElementById(uid);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => {
+    btn.textContent = '✓ copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '⎘ copy'; btn.classList.remove('copied'); }, 2000);
+  }).catch(() => toast('Copy failed', 'err'));
+}
+
+function resetScan() {
+  document.getElementById('cardResults').style.display = 'none';
+  document.getElementById('scanProgress').style.display = 'none';
+  document.getElementById('scanBtn').disabled = false;
+  document.getElementById('scanBtn').innerHTML = 'Run Scan →';
+  // FIX: restore spinner for next run
+  document.getElementById('scanSpinner').style.display = 'inline-block';
+  document.getElementById('statsRow').style.display = 'none';
+  document.getElementById('resultSummary').style.display = 'none';
+  document.getElementById('resultTabs').style.display = 'none';
+  document.getElementById('tabFixes').style.display = 'none';
+  document.getElementById('findingsList').innerHTML = '';
+  document.getElementById('fixFilesList').innerHTML = '';
+  document.getElementById('auditList').innerHTML = '';
+  document.getElementById('sevFilters').style.display = 'none';
+  _termPrinted.clear();
+  S._findingTexts = [];
+  if (S.pollInterval) { clearInterval(S.pollInterval); S.pollInterval = null; }
+  switchTab('findings');
+  setStep(3);
+}
+
+(async () => {
+  await checkHealth();
+  await handleCallback();
+  if (!S.loggedIn) await checkSession();
+  if (localStorage.getItem('iac_auth_session') && S.loggedIn) {
+    document.getElementById('connectBox').classList.add('show');
+    startConnectPoll();
+  }
+})();
+</script>
+</body>
+</html>

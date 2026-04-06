@@ -1,0 +1,48 @@
+# ── Web Framework ─────────────────────────────────────────────────────────────
+# fastapi and starlette are co-pinned — updating one requires updating the other.
+fastapi==0.115.5
+starlette==0.41.3
+uvicorn[standard]>=0.30.0,<0.32.0
+
+# ── Data Validation ───────────────────────────────────────────────────────────
+pydantic>=2.9.0,<3.0.0
+
+# ── GitHub API ────────────────────────────────────────────────────────────────
+PyGithub>=2.5.0,<3.0.0
+
+# ── LangChain Ecosystem ───────────────────────────────────────────────────────
+langchain-core==0.3.83
+langgraph==0.5.4
+langchain-openai==0.3.35
+# openai is pulled in by langchain-openai — explicit pin prevents a silent
+# breaking upgrade during pip install --upgrade.
+openai>=1.58.1,<2.0.0
+
+# ── Auth0 AI SDK ──────────────────────────────────────────────────────────────
+auth0-ai-langchain==1.0.1
+
+# ── HTTP Client ───────────────────────────────────────────────────────────────
+# httpx >=0.28 is required by langchain-openai 0.3.35.
+httpx>=0.28.0,<0.29.0
+
+# ── IaC Scanning ─────────────────────────────────────────────────────────────
+# Pin checkov to a narrow range — it releases frequently and has changed its
+# JSON output format between minor versions. Widen only after testing.
+checkov>=3.2.0,<3.3.0
+
+# ── Session / Security ────────────────────────────────────────────────────────
+itsdangerous>=2.2.0,<3.0.0
+
+# ── Rate Limiting ─────────────────────────────────────────────────────────────
+slowapi>=0.1.9
+
+# ── Tokenization ─────────────────────────────────────────────────────────────
+tiktoken>=0.7.0,<0.8.0
+
+# ── Environment ───────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0,<2.0.0
+
+# ── Job Store (optional) ──────────────────────────────────────────────────────
+# Only required if REDIS_URL is set. The app degrades gracefully to in-memory
+# storage without it, but include it so the import doesn't silently fail.
+redis>=5.0.0,<6.0.0
